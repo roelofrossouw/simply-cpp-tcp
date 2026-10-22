@@ -1,10 +1,8 @@
 #include "tcp_server.h"
 
-#include <arpa/inet.h>
 #include <fcntl.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
+#include <netinet/in.h>  // IPPROTO_IPV6, IPV6_V6ONLY: socket options; addresses are sc::ip_endpoint's
+#include <netinet/tcp.h> // TCP_NODELAY
 #include <sys/socket.h>
 #include <unistd.h>
 #ifdef __linux__
@@ -40,27 +38,6 @@ namespace {
     bool nonblocking(const int fd) {
         const int flags = fcntl(fd, F_GETFL, 0);
         return flags >= 0 && fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
-    }
-
-    sc::ip_endpoint endpoint_of(const sockaddr_storage &address) {
-        char text[INET6_ADDRSTRLEN]{};
-        if (address.ss_family == AF_INET6) {
-            const auto &v6 = reinterpret_cast<const sockaddr_in6 &>(address);
-            inet_ntop(AF_INET6, &v6.sin6_addr, text, sizeof text);
-            std::string host = text;
-            if (host.starts_with("::ffff:") && host.find('.') != std::string::npos) host = host.substr(7); // a v4 client on a v6 socket
-            return {host, ntohs(v6.sin6_port)};
-        }
-        const auto &v4 = reinterpret_cast<const sockaddr_in &>(address);
-        inet_ntop(AF_INET, &v4.sin_addr, text, sizeof text);
-        return {text, ntohs(v4.sin_port)};
-    }
-
-    sc::ip_endpoint local_of(const int fd) {
-        sockaddr_storage address{};
-        socklen_t size = sizeof address;
-        if (getsockname(fd, reinterpret_cast<sockaddr *>(&address), &size) != 0) return {};
-        return endpoint_of(address);
     }
 
     // Writes without SIGPIPE: MSG_NOSIGNAL on Linux, SO_NOSIGPIPE (set on accept) on macOS.
@@ -511,7 +488,7 @@ public:
         {
             const std::lock_guard lock{state_mutex_};
             listening_.clear();
-            for (const int fd: listeners) listening_.push_back(local_of(fd));
+            for (const int fd: listeners) listening_.push_back(ip_endpoint::local_of(fd));
             accepting_ = true;
         }
         state_changed_.notify_all();
@@ -726,31 +703,28 @@ private:
     }
 
     int bind_listener(const ip_endpoint &endpoint) {
-        addrinfo hints{};
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_STREAM;
-        hints.ai_flags = AI_PASSIVE;
-        addrinfo *found = nullptr;
-        const auto port = std::to_string(endpoint.port);
-        const char *host = endpoint.host.empty() ? nullptr : endpoint.host.c_str();
-        if (const int error = getaddrinfo(host, port.c_str(), &hints, &found); error != 0) {
-            throw std::runtime_error("sc-tcp-server: " + endpoint.to_string() + ": " + gai_strerror(error));
+        std::vector<socket_address> addresses;
+        try {
+            addresses = endpoint.resolve(ip_use::listen);
+        } catch (const std::runtime_error &error) {
+            throw std::runtime_error(std::string{"sc-tcp-server: "} + error.what());
         }
         std::string failure = "no address";
         int fd = -1;
-        for (const addrinfo *each = found; each && fd < 0; each = each->ai_next) {
-            fd = socket(each->ai_family, each->ai_socktype, each->ai_protocol);
+        for (const auto &address: addresses) {
+            fd = socket(address.family(), address.socket_type(), address.protocol());
             if (fd < 0) continue;
             const int yes = 1;
             setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);
-            if (each->ai_family == AF_INET6) setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof yes);
-            if (bind(fd, each->ai_addr, each->ai_addrlen) != 0 || listen(fd, options_.backlog) != 0 || !nonblocking(fd)) {
+            if (address.ipv6()) setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof yes);
+            if (bind(fd, address.get(), address.size()) != 0 || listen(fd, options_.backlog) != 0 || !nonblocking(fd)) {
                 failure = std::strerror(errno);
                 ::close(fd);
                 fd = -1;
+                continue;
             }
+            break;
         }
-        freeaddrinfo(found);
         if (fd < 0) throw std::runtime_error("sc-tcp-server: can't listen on " + endpoint.to_string() + ": " + failure);
         return fd;
     }
@@ -759,9 +733,8 @@ private:
     void accept_all(const int listener, poller &events, std::unordered_map<int, std::shared_ptr<connection>> &by_fd,
                     const Schedule &schedule) {
         while (true) {
-            sockaddr_storage address{};
-            socklen_t size = sizeof address;
-            const int fd = ::accept(listener, reinterpret_cast<sockaddr *>(&address), &size);
+            socket_address address;
+            const int fd = ::accept(listener, address.get(), address.size_pointer());
             if (fd < 0) {
                 if (errno == EINTR) continue;
                 if (errno != EAGAIN && errno != EWOULDBLOCK) warn(std::string{"accept: "} + std::strerror(errno));
@@ -783,7 +756,7 @@ private:
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof yes);
 #endif
             setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof yes);
-            const auto c = std::make_shared<connection>(++next_id_, fd, endpoint_of(address), local_of(fd), events, options_,
+            const auto c = std::make_shared<connection>(++next_id_, fd, ip_endpoint::from(address), ip_endpoint::local_of(fd), events, options_,
                                                         [this](const std::uint64_t id) {
                                                             {
                                                                 const std::lock_guard lock{close_mutex_};

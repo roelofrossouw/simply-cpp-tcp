@@ -10,7 +10,7 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 
 # sc-core: ip_endpoints, log_level and params for the demo. No other dependency: epoll (Linux) or
 # kqueue (macOS) and POSIX sockets.
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.20.0)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.20.0) # raise to 1.21.0 at release: ip_endpoint resolves and converts socket addresses
 find_package(Threads REQUIRED)
 
 set(SOURCE_OBJECTS include/tcp_server.h)
