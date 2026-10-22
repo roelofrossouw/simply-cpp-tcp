@@ -67,24 +67,38 @@ connection; try it with `nc 127.0.0.1 7000`.
 
 <!-- sc-example: examples/sc-tcp-server-demo.cpp -->
 ```cpp
-sc::tcp_server server{args.as<std::string>("listen"), {
-    .connected = [](sc::tcp_connection &c) {
-        c.context() = 0; // lines so far
-        std::cout << "+ " << c.remote() << " on " << c.local() << std::endl;
-    },
-    .received = [](sc::tcp_connection &c, const std::string_view input) -> std::size_t {
+namespace {
+    std::string upper_cased(std::string text) {
+        std::ranges::transform(text, text.begin(), [](const unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+        return text;
+    }
+
+    // A client connected: its count of lines starts at 0.
+    void connected(sc::tcp_connection &client) {
+        client.context() = 0;
+        std::cout << "+ " << client.remote() << " on " << client.local() << std::endl;
+    }
+
+    // Bytes arrived: answers the first whole line, and says how much of the input that used. The
+    // server calls it again while lines are left.
+    std::size_t received(sc::tcp_connection &client, const std::string_view input) {
         const auto end = input.find('\n');
-        if (end == std::string_view::npos) return 0; // not a whole line yet
-        std::string line{input.substr(0, end)};
-        std::ranges::transform(line, line.begin(), [](const unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
-        auto &count = std::any_cast<int &>(c.context());
-        c.send(std::to_string(++count) + ": " + line + "\n");
+        if (end == std::string_view::npos) return 0; // not a whole line yet: wait for more
+        auto &count = std::any_cast<int &>(client.context());
+        client.send(std::to_string(++count) + ": " + upper_cased(std::string{input.substr(0, end)}) + "\n");
         return end + 1;
-    },
-    .disconnected = [](sc::tcp_connection &c, const sc::tcp_close_reason reason) {
-        std::cout << "- " << c.remote() << " (" << sc::tcp_close_reason_name(reason) << ")" << std::endl;
-    },
-}, {.idle_timeout = std::chrono::seconds{args.as<int>("idle")}}};
+    }
+
+    // The client is gone, and why.
+    void disconnected(sc::tcp_connection &client, const sc::tcp_close_reason reason) {
+        std::cout << "- " << client.remote() << " (" << sc::tcp_close_reason_name(reason) << ")" << std::endl;
+    }
+
+    // The server: where it listens, the handlers above, and when a silent client is let go.
+    sc::tcp_server line_server(const sc::ip_endpoints &listen, const std::chrono::seconds idle) {
+        return {listen, {.connected = connected, .received = received, .disconnected = disconnected}, {.idle_timeout = idle}};
+    }
+}
 ```
 <!-- /sc-example -->
 
