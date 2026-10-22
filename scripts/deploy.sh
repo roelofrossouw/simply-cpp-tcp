@@ -6,7 +6,7 @@
 #
 # Usage: scripts/deploy.sh [server] [user]
 
-module="sc-tcp-server"
+module="sc-tcp"
 server="${1:-build}"
 user="${2:-root}"
 scriptfile=$(realpath "$0")

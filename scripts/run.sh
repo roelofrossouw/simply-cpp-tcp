@@ -6,7 +6,7 @@
 #
 # Runs on the server, in the directory deploy.sh synced to.
 
-module="sc-tcp-server"
+module="sc-tcp"
 version=""
 ubuntu_codename=$(lsb_release -sc)
 build_directory="cmake-build-$ubuntu_codename"

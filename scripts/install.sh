@@ -6,7 +6,7 @@
 #
 # Runs on the server, in the directory deploy.sh synced to.
 
-module="sc-tcp-server"
+module="sc-tcp"
 scriptfile=$(realpath "$0")
 scriptpath="${scriptfile%/*}"
 dirpath=$(realpath "$scriptpath"/..)

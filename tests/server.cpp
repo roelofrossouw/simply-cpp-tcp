@@ -3,7 +3,7 @@
 // threads, close() after output, handlers that throw, input and output limits, the connection
 // limit, stopping with connections open, and binding errors.
 
-#include <tcp_server.h>
+#include <tcp.h>
 #include <sc_test.h>
 
 #include <arpa/inet.h>
@@ -307,7 +307,7 @@ int main() {
     {
         std::atomic<int> stopped{0};
         sc::tcp_server server{any_port, {.disconnected = [&](sc::tcp_connection &, const sc::tcp_close_reason reason) {
-            if (reason == sc::tcp_close_reason::server_stopped) ++stopped;
+            if (reason == sc::tcp_close_reason::stopped) ++stopped;
         }}};
         std::thread serving{[&] { server.run(); }};
         CHECK(server.wait_until_running());

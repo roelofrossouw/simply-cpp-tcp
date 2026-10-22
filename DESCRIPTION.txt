@@ -1,1 +1,1 @@
-TCP server for simply-cpp
+TCP servers and clients for simply-cpp
