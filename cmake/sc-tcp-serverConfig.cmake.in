@@ -2,7 +2,7 @@
 
 include("${CMAKE_CURRENT_LIST_DIR}/SimplyCppFunctions.cmake")
 
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.20.0)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.21.0)
 find_package(Threads REQUIRED)
 
 include("${CMAKE_CURRENT_LIST_DIR}/sc-tcp-serverTargets.cmake")
