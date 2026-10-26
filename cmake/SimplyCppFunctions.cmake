@@ -24,7 +24,7 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-set(SC_HELPERS_VERSION 30)
+set(SC_HELPERS_VERSION 31)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
@@ -668,6 +668,32 @@ function(sc_license_name out file)
         set(name Unlicense)
     endif ()
     set(${out} "${name}" PARENT_SCOPE)
+endfunction()
+
+# sc_man_page(<target> [EXTRA <file.md>] [COMPONENT <component>])
+# The program's man page, section 1: sc::params writes it from the structure that makes its --help
+# (params.h, man_page()), when the built program runs with SC_PARAMS_MAN_PAGE set. EXTRA is a file
+# of extra sections in a little Markdown (EXAMPLES, SEE ALSO, AUTHORS ...; a DESCRIPTION adds to
+# the generated one), by default man/<target>.md when there is one. The page is made at build
+# time, so it can't drift from --help, and installed into share/man/man1 (COMPONENT, when given).
+function(sc_man_page target)
+    cmake_parse_arguments(ARG "" "EXTRA;COMPONENT" "" ${ARGN})
+    set(extra "${ARG_EXTRA}")
+    if (NOT extra AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/man/${target}.md")
+        set(extra "${CMAKE_CURRENT_SOURCE_DIR}/man/${target}.md")
+    endif ()
+    set(page "${CMAKE_CURRENT_BINARY_DIR}/${target}.1")
+    add_custom_command(OUTPUT "${page}"
+            COMMAND ${CMAKE_COMMAND} -E env "SC_PARAMS_MAN_PAGE=$<IF:$<BOOL:${extra}>,${extra},1>" sh -c "'$<TARGET_FILE:${target}>' > '${page}'"
+            DEPENDS ${target} ${extra}
+            COMMENT "Writing the man page ${target}.1"
+            VERBATIM)
+    add_custom_target(${target}-man ALL DEPENDS "${page}")
+    if (ARG_COMPONENT)
+        install(FILES "${page}" DESTINATION "${CMAKE_INSTALL_MANDIR}/man1" COMPONENT ${ARG_COMPONENT})
+    else ()
+        install(FILES "${page}" DESTINATION "${CMAKE_INSTALL_MANDIR}/man1")
+    endif ()
 endfunction()
 
 # sc_program_info(<target> [LICENSE <name>] [URL <url>] [TEXT_URL <url>])
