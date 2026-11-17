@@ -10,7 +10,7 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 
 # sc-core: ip_endpoint (it resolves and converts socket addresses), log_level, and params for the
 # demo. No other dependency: epoll (Linux) or kqueue (macOS) and POSIX sockets.
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 2.2.0)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 3.0.0)
 find_package(Threads REQUIRED)
 
 set(SOURCE_OBJECTS include/sc/tcp/tcp.h)
@@ -44,6 +44,6 @@ endif ()
 add_sc_example(sc-tcp-demo)
 
 # It was simply-cpp-tcp-server up to 1.0.2: these packages take its place (and its files).
-package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 1.21.0~)"
+package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 3.0.0~)"
         BREAKS "simply-cpp-tcp-server (<< 2.0.0~)" REPLACES "simply-cpp-tcp-server (<< 2.0.0~)"
         DEV_BREAKS "simply-cpp-tcp-server-dev (<< 2.0.0~)" DEV_REPLACES "simply-cpp-tcp-server-dev (<< 2.0.0~)")
