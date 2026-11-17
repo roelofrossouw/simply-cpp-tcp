@@ -1,11 +1,11 @@
 # Several copies of these helpers get included in one configure: sc-core's, and the copy each module's
 # package config includes. A copy older than one already included returns here instead of replacing
-# its functions with older ones (helpers 36 on; copies before 36 don't check). Keep both 36s here in step
+# its functions with older ones (helpers 36 on; copies before 36 don't check). Keep both numbers here in step
 # with SC_HELPERS_VERSION below.
-if (DEFINED SC_HELPERS_LOADED_VERSION AND SC_HELPERS_LOADED_VERSION GREATER 36)
+if (DEFINED SC_HELPERS_LOADED_VERSION AND SC_HELPERS_LOADED_VERSION GREATER 38)
     return()
 endif ()
-set(SC_HELPERS_LOADED_VERSION 36)
+set(SC_HELPERS_LOADED_VERSION 38)
 
 # Keep project()/cmake_minimum_required() in the top-level CMakeLists.txt.
 # Only the post-project C++/PIC defaults are safe here.
@@ -33,7 +33,7 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-set(SC_HELPERS_VERSION 36)
+set(SC_HELPERS_VERSION 38)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
@@ -349,8 +349,16 @@ function(add_sc_object object)
     set_target_properties(${object_name} PROPERTIES EXCLUDE_FROM_ALL ON)
     target_include_directories(${object_name} PRIVATE ${INCLUDE} ${SC_OBJECT_INCLUDE_DIRS})
 
-    if (SC_OBJECT_LINK_LIBRARIES)
-        target_link_libraries(${object_name} PRIVATE ${SC_OBJECT_LINK_LIBRARIES})
+    # What the object compiles against: its own libraries, the ones it makes public, and sc-core, which
+    # every module's headers use. Linking a target gives its include folder; before the headers moved to
+    # include/sc/<module>/ an object that named none of them still found the flat headers in /usr/include.
+    set(object_links ${SC_OBJECT_LINK_LIBRARIES} ${SC_OBJECT_PUBLIC_LINK_LIBRARIES})
+    if (TARGET sc::sc-core)
+        list(APPEND object_links sc::sc-core)
+    endif ()
+    if (object_links)
+        list(REMOVE_DUPLICATES object_links)
+        target_link_libraries(${object_name} PRIVATE ${object_links})
     endif ()
 
     list(APPEND SOURCE_OBJECTS $<TARGET_OBJECTS:${object_name}>)
@@ -463,15 +471,12 @@ endfunction()
 # a find_package() asking for one: SameMajorVersion (the default) or, for sc-core, whose every module
 # asks for some 1.x, AnyNewerVersion.
 #
-# Headers: a module whose public headers are in include/sc/<SC_MODULE>/ installs them as
-# <prefix>/include/sc/<SC_MODULE>/..., included as <sc/<module>/x.h>. For one release cycle it
-# also installs a forwarding header at each old flat path (<x.h>, or <COMPAT_SUBDIR/x.h>), which
-# includes the new one; define SC_WARN_OLD_INCLUDES to have them warn. COMPAT_SUBDIR puts the old
-# paths under a folder (sc-pdflite's <pdflite/document.h>), except for the files named in
-# COMPAT_FLAT, which were flat before (<pdflite.h>). The forwarders go with the next major cycle.
+# Headers: a module's public headers are in include/sc/<SC_MODULE>/ and install as
+# <prefix>/include/sc/<SC_MODULE>/..., included as <sc/<module>/x.h>. (Helpers 33-37 also installed
+# forwarding headers at the old flat paths for one release cycle; they went with helpers 38.)
 function(install_sc_module)
-    set(one_value_args NAME VERSION CONFIG_TEMPLATE COMPATIBILITY COMPAT_SUBDIR)
-    set(multi_value_args PATH_VARS COMPAT_FLAT)
+    set(one_value_args NAME VERSION CONFIG_TEMPLATE COMPATIBILITY)
+    set(multi_value_args PATH_VARS)
     cmake_parse_arguments(ARG "" "${one_value_args}" "${multi_value_args}" ${ARGN})
 
     set(name "${ARG_NAME}")
@@ -499,10 +504,6 @@ function(install_sc_module)
     install(TARGETS ${sc_static_libraries} EXPORT ${name}Targets
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT development)
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ COMPONENT development DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} PATTERN ".DS_Store" EXCLUDE PATTERN "*.in" EXCLUDE)
-    if (SC_MODULE AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/sc/${SC_MODULE}")
-        sc_compat_headers("${CMAKE_CURRENT_SOURCE_DIR}/include/sc/${SC_MODULE}" "sc/${SC_MODULE}"
-                "${ARG_COMPAT_SUBDIR}" "${ARG_COMPAT_FLAT}")
-    endif ()
     install(EXPORT ${name}Targets FILE ${name}Targets.cmake NAMESPACE sc:: DESTINATION ${package_destination} COMPONENT development)
 
     configure_package_config_file(${ARG_CONFIG_TEMPLATE} ${CMAKE_CURRENT_BINARY_DIR}/${name}Config.cmake
@@ -513,33 +514,6 @@ function(install_sc_module)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${name}Config.cmake
             ${CMAKE_CURRENT_BINARY_DIR}/${name}ConfigVersion.cmake
             DESTINATION ${package_destination} COMPONENT development)
-endfunction()
-
-# sc_compat_headers(<header directory> <new include prefix> <old subdir> <files kept flat>)
-# Writes and installs a forwarding header at each old include path of the headers in <header
-# directory>: <old subdir>/<file>, or <file> when old subdir is empty or the file is in <files kept
-# flat>. Each one includes <new include prefix>/<file>.
-function(sc_compat_headers directory prefix old_subdir flat_files)
-    file(GLOB_RECURSE headers RELATIVE "${directory}" "${directory}/*.h" "${directory}/*.hpp")
-    set(compat_root "${CMAKE_CURRENT_BINARY_DIR}/sc-compat-include")
-    file(REMOVE_RECURSE "${compat_root}")
-    foreach (header IN LISTS headers)
-        set(old_path "${header}")
-        if (old_subdir AND NOT header IN_LIST flat_files)
-            set(old_path "${old_subdir}/${header}")
-        endif ()
-        file(WRITE "${compat_root}/${old_path}"
-                "// Forwards the old include path to <${prefix}/${header}>: include that instead.\n"
-                "// Installed for one release cycle; removed with the next major release of the suite.\n"
-                "#pragma once\n"
-                "#ifdef SC_WARN_OLD_INCLUDES\n"
-                "#warning \"<${old_path}> is going away: include <${prefix}/${header}>\"\n"
-                "#endif\n"
-                "#include <${prefix}/${header}>\n")
-    endforeach ()
-    if (headers)
-        install(DIRECTORY "${compat_root}/" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT development)
-    endif ()
 endfunction()
 
 # package_sc_module([DEPENDS ...] [DEV_DEPENDS ...] [BREAKS ...] [REPLACES ...] [DEV_BREAKS ...]
