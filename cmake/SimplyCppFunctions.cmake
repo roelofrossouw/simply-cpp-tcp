@@ -2,10 +2,10 @@
 # package config includes. A copy older than one already included returns here instead of replacing
 # its functions with older ones (helpers 36 on; copies before 36 don't check). Keep both numbers here in step
 # with SC_HELPERS_VERSION below.
-if (DEFINED SC_HELPERS_LOADED_VERSION AND SC_HELPERS_LOADED_VERSION GREATER 38)
+if (DEFINED SC_HELPERS_LOADED_VERSION AND SC_HELPERS_LOADED_VERSION GREATER 39)
     return()
 endif ()
-set(SC_HELPERS_LOADED_VERSION 38)
+set(SC_HELPERS_LOADED_VERSION 39)
 
 # Keep project()/cmake_minimum_required() in the top-level CMakeLists.txt.
 # Only the post-project C++/PIC defaults are safe here.
@@ -33,7 +33,7 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-set(SC_HELPERS_VERSION 38)
+set(SC_HELPERS_VERSION 39)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
@@ -380,6 +380,72 @@ function(sc_module_name output)
     set(${output} "sc-${SC_MODULE}" PARENT_SCOPE)
 endfunction()
 
+# sc_package_base(<module> <out>): a module's package name without a version: simply-cpp for sc-core
+# (core), simply-cpp-<m> for the others. <module> may be given as "http" or "sc-http".
+function(sc_package_base module out)
+    string(REGEX REPLACE "^sc-" "" module "${module}")
+    if (module STREQUAL "core")
+        set(${out} simply-cpp PARENT_SCOPE)
+    else ()
+        set(${out} simply-cpp-${module} PARENT_SCOPE)
+    endif ()
+endfunction()
+
+# sc_runtime_package(<base> <version> <out>): a library's runtime package carries its major version
+# (helpers 39), so two majors install side by side and an app built against the old one keeps
+# running while the new one arrives: simply-cpp3, simply-cpp-http2. A name that ends in a digit
+# takes a "-" before the major, as Debian does (simply-cpp-x11-2).
+function(sc_runtime_package base version out)
+    string(REGEX MATCH "^[0-9]+" major "${version}")
+    if (base MATCHES "[0-9]$")
+        set(${out} "${base}-${major}" PARENT_SCOPE)
+    else ()
+        set(${out} "${base}${major}" PARENT_SCOPE)
+    endif ()
+endfunction()
+
+# sc_versioned_depends(<variable>)
+# Rewrites a Debian Depends/Recommends list (", " or ";" separated) in place: each suite library
+# named without a version gets its versioned runtime package, at the major this configure built
+# against: "simply-cpp-http (>= 2.0.0~)" becomes "simply-cpp-http2 (>= 2.0.0~)". Only names whose
+# sc::sc-<m>-shared target this configure has are libraries; everything else (-dev and -tools
+# packages, simply-cpp-models, apps, the PHP and PostgreSQL extensions) is left as written.
+# Apps call it on CPACK_DEBIAN_PACKAGE_DEPENDS just before include(CPack); package_sc_module()
+# does it for modules.
+function(sc_versioned_depends variable)
+    set(result)
+    string(REPLACE ", " ";" entries "${${variable}}")
+    foreach (entry IN LISTS entries)
+        string(STRIP "${entry}" entry)
+        if (entry STREQUAL "")
+            continue()
+        endif ()
+        if (entry MATCHES "^(simply-cpp(-[a-z0-9-]+)?)( .*)?$")
+            set(package "${CMAKE_MATCH_1}")
+            set(rest "${CMAKE_MATCH_3}")
+            if (package STREQUAL "simply-cpp")
+                set(module core)
+            else ()
+                string(REGEX REPLACE "^simply-cpp-" "" module "${package}")
+            endif ()
+            set(version "")
+            if (SC_MODULE STREQUAL module)
+                set(version "${SC_VERSION}")
+            elseif (DEFINED sc-${module}_VERSION)
+                set(version "${sc-${module}_VERSION}")
+            endif ()
+            if (version AND (TARGET sc::sc-${module}-shared OR TARGET sc-${module}-shared))
+                sc_runtime_package("${package}" "${version}" package)
+                set(entry "${package}${rest}")
+            endif ()
+        endif ()
+        list(APPEND result "${entry}")
+    endforeach ()
+    list(REMOVE_DUPLICATES result)
+    string(REPLACE ";" ", " result "${result}")
+    set(${variable} "${result}" PARENT_SCOPE)
+endfunction()
+
 # add_sc_libraries([NAME ...])
 # Build the static and shared module libraries from SOURCE_OBJECTS.
 function(add_sc_libraries)
@@ -429,11 +495,8 @@ function(add_sc_libraries)
                     set(mapped "sc::${dependency_module}")
                 endif ()
                 if (kind STREQUAL "SHARED" AND mapped MATCHES "-shared$" AND ${dependency_module}_VERSION)
-                    if (dependency_module STREQUAL "sc-core")
-                        set(dependency_package "simply-cpp")
-                    else ()
-                        string(REGEX REPLACE "^sc-" "simply-cpp-" dependency_package "${dependency_module}")
-                    endif ()
+                    sc_package_base("${dependency_module}" dependency_package)
+                    sc_runtime_package("${dependency_package}" "${${dependency_module}_VERSION}" dependency_package)
                     list(APPEND shared_package_depends "${dependency_package} (>= ${${dependency_module}_VERSION}~)")
                 endif ()
             endif ()
@@ -535,12 +598,29 @@ function(package_sc_module)
         )
         set(CPACK_GENERATOR "DEB")
     endif ()
-    if (${SC_MODULE} STREQUAL "core")
-        set(SC_PACKAGE_NAME simply-cpp)
+    # A library module's runtime package carries its major version (helpers 39: simply-cpp3,
+    # simply-cpp-http2), so an app built against the previous major keeps its library while the new one
+    # installs beside it; it holds only what has a versioned path (the library, its doc folder). Its
+    # programs, demos, man pages and data go into <base>-tools, and headers, static archive and CMake
+    # files into <base>-dev; both names stay the same across majors. A module without a shared library
+    # (the PHP and PostgreSQL extensions, which servers install by name) keeps one unversioned package.
+    sc_package_base(${SC_MODULE} SC_PACKAGE_BASE)
+    set(versioned FALSE)
+    if (TARGET sc-${SC_MODULE}-shared)
+        set(versioned TRUE)
+        sc_runtime_package(${SC_PACKAGE_BASE} ${SC_VERSION} SC_PACKAGE_NAME)
     else ()
-        set(SC_PACKAGE_NAME simply-cpp-${SC_MODULE})
+        set(SC_PACKAGE_NAME ${SC_PACKAGE_BASE})
+    endif ()
+    get_cmake_property(installed_components COMPONENTS)
+    set(with_tools FALSE)
+    if (versioned AND "tools" IN_LIST installed_components)
+        set(with_tools TRUE)
     endif ()
     set(CPACK_COMPONENTS_ALL runtime development)
+    if (with_tools)
+        list(APPEND CPACK_COMPONENTS_ALL tools)
+    endif ()
     set(CPACK_DEB_COMPONENT_INSTALL ON)
     set(CPACK_PACKAGE_NAME "${SC_PACKAGE_NAME}")
     set(CPACK_PACKAGE_VERSION "${SC_VERSION}~${CODENAME}")
@@ -549,15 +629,37 @@ function(package_sc_module)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
     set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME "${SC_PACKAGE_NAME}")
-    set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_NAME "${SC_PACKAGE_NAME}-dev")
+    set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_NAME "${SC_PACKAGE_BASE}-dev")
     # set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}-unknown-${CPACK_PACKAGE_VERSION}-${CODENAME}-${CMAKE_SYSTEM_PROCESSOR}.deb")
     set(CPACK_DEBIAN_RUNTIME_FILE_NAME "${SC_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_PROCESSOR}.deb")
-    set(CPACK_DEBIAN_DEVELOPMENT_FILE_NAME "${SC_PACKAGE_NAME}-dev-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_PROCESSOR}.deb")
+    set(CPACK_DEBIAN_DEVELOPMENT_FILE_NAME "${SC_PACKAGE_BASE}-dev-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_PROCESSOR}.deb")
+    if (with_tools)
+        # The programs and demos, at the paths the old unversioned package had them: they take those
+        # files over (Replaces) without removing that package, whose library older apps still use.
+        set(CPACK_DEBIAN_TOOLS_PACKAGE_NAME "${SC_PACKAGE_BASE}-tools")
+        set(CPACK_DEBIAN_TOOLS_FILE_NAME "${SC_PACKAGE_BASE}-tools-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_PROCESSOR}.deb")
+        set(CPACK_DEBIAN_TOOLS_PACKAGE_SECTION "utils")
+        set(CPACK_DEBIAN_TOOLS_PACKAGE_DEPENDS "${SC_PACKAGE_NAME} (= ${CPACK_PACKAGE_VERSION})")
+        set(CPACK_DEBIAN_TOOLS_PACKAGE_REPLACES "${SC_PACKAGE_BASE} (<< ${CPACK_PACKAGE_VERSION})")
+        # dpkg-shlibdeps looks for the libraries the programs link where the build left the module's
+        # own: it is in the runtime package, not beside them in the -tools one.
+        get_target_property(shared_library_dir sc-${SC_MODULE}-shared LIBRARY_OUTPUT_DIRECTORY)
+        if (NOT shared_library_dir)
+            get_target_property(shared_library_dir sc-${SC_MODULE}-shared BINARY_DIR)
+        endif ()
+        set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS "${shared_library_dir}")
+    endif ()
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Roelof Rossouw <roelof@roelof.co.za>")
     set(CPACK_DEBIAN_PACKAGE_DESCRIPTION "Simply C++ ${SC_MODULE} module for Ubuntu ${CODENAME}")
     set(CPACK_DEBIAN_RUNTIME_PACKAGE_SECTION "utils")
     set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_SECTION "devel")
     set(CPACK_DEBIAN_LIBRARY_PACKAGE_SECTION "libs")
+    # Suite libraries named in DEPENDS get their versioned package names (sc_versioned_depends()).
+    sc_versioned_depends(ARG_DEPENDS)
+    string(REPLACE ", " ";" ARG_DEPENDS "${ARG_DEPENDS}")
+    if (CPACK_DEBIAN_RUNTIME_PACKAGE_RECOMMENDS)
+        sc_versioned_depends(CPACK_DEBIAN_RUNTIME_PACKAGE_RECOMMENDS)
+    endif ()
     # The modules the shared library links (add_sc_libraries()), unless DEPENDS already names them.
     foreach (shared_depend IN LISTS SC_SHARED_PACKAGE_DEPENDS)
         string(REGEX MATCH "^[^ ]+" shared_package "${shared_depend}")
@@ -582,13 +684,20 @@ function(package_sc_module)
     if (license_file)
         install(FILES "${license_file}" DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${SC_PACKAGE_NAME}
                 RENAME copyright COMPONENT runtime)
-        install(FILES "${license_file}" DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${SC_PACKAGE_NAME}-dev
+        install(FILES "${license_file}" DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${SC_PACKAGE_BASE}-dev
                 RENAME copyright COMPONENT development)
+        if (with_tools)
+            install(FILES "${license_file}" DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${SC_PACKAGE_BASE}-tools
+                    RENAME copyright COMPONENT tools)
+        endif ()
     endif ()
     # The Apache License asks that its NOTICE go along with the work.
     if (EXISTS "${PROJECT_SOURCE_DIR}/NOTICE")
         install(FILES "${PROJECT_SOURCE_DIR}/NOTICE" DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${SC_PACKAGE_NAME} COMPONENT runtime)
-        install(FILES "${PROJECT_SOURCE_DIR}/NOTICE" DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${SC_PACKAGE_NAME}-dev COMPONENT development)
+        install(FILES "${PROJECT_SOURCE_DIR}/NOTICE" DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${SC_PACKAGE_BASE}-dev COMPONENT development)
+        if (with_tools)
+            install(FILES "${PROJECT_SOURCE_DIR}/NOTICE" DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/${SC_PACKAGE_BASE}-tools COMPONENT tools)
+        endif ()
     endif ()
     if (PROJECT_HOMEPAGE_URL)
         set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "${PROJECT_HOMEPAGE_URL}")
@@ -678,19 +787,31 @@ function(add_sc_example name)
     add_executable(${name} "${ARG_SOURCE}")
     target_link_libraries(${name} PRIVATE ${ARG_LINK_LIBRARIES})
     sc_program_info(${name}) # --license and --license-text for a demo that uses sc::params
-    install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime)
+    # A library module's runtime package holds only its versioned library (helpers 39): its demos
+    # go into the unversioned <package>-tools package.
+    set(component runtime)
+    if (TARGET ${module}-shared)
+        set(component tools)
+    endif ()
+    install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${component})
 endfunction()
 
 # sc_package_name(<out>)
-# The runtime package's name: simply-cpp for sc-core, simply-cpp-<module> for a module, else the
-# project's name (an app such as oneapi).
+# The package a project's programs land in, whose /usr/share/doc holds the licence they show:
+# simply-cpp-<module>-tools for a library module (helpers 39), simply-cpp-<module> for a module
+# without a shared library (the PHP and PostgreSQL extensions), else the project's own name (an app
+# such as oneapi).
 function(sc_package_name out)
     if (CPACK_PACKAGE_NAME)
         set(${out} ${CPACK_PACKAGE_NAME} PARENT_SCOPE) # an app's own (html2pdf, oneapi)
-    elseif (SC_MODULE STREQUAL "core")
-        set(${out} simply-cpp PARENT_SCOPE)
     elseif (SC_MODULE)
-        set(${out} simply-cpp-${SC_MODULE} PARENT_SCOPE)
+        # A library module's programs and demos live in its -tools package (helpers 39).
+        sc_package_base(${SC_MODULE} base)
+        if (TARGET sc-${SC_MODULE}-shared)
+            set(${out} ${base}-tools PARENT_SCOPE)
+        else ()
+            set(${out} ${base} PARENT_SCOPE)
+        endif ()
     else ()
         set(${out} ${PROJECT_NAME} PARENT_SCOPE)
     endif ()
