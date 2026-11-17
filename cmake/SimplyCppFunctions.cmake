@@ -7,6 +7,13 @@ if (SC_MODULE)
     set(CMAKE_CXX_EXTENSIONS OFF)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     option(SC_BUILD_EXAMPLES "Build and install the module's examples" ON)
+    # Nothing a suite library or program takes from a static archive is exported (ELF): a program or
+    # shared object that links some module's static archive and also loads that module's shared library
+    # (directly, or under another module) would otherwise hand its own copy of the code to every caller
+    # in the process. Darwin's two-level namespace already keeps them apart.
+    if (UNIX AND NOT APPLE)
+        add_link_options("LINKER:--exclude-libs,ALL")
+    endif ()
 endif ()
 
 include(GNUInstallDirs)
@@ -24,7 +31,7 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-set(SC_HELPERS_VERSION 32)
+set(SC_HELPERS_VERSION 34)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
@@ -324,7 +331,11 @@ function(add_sc_object object)
     # sc-obj-, not sc-: sc-<module> is the final library.
     set(object_name "sc-obj-${object}")
     set(source_file "src/${object}.cpp")
+    # Public headers live in include/sc/<module>/ (since helpers 33); older modules keep include/.
     set(header_file "include/${object}.h")
+    if (SC_MODULE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/include/sc/${SC_MODULE}/${object}.h")
+        set(header_file "include/sc/${SC_MODULE}/${object}.h")
+    endif ()
 
     set(options)
     set(one_value_args)
@@ -384,6 +395,11 @@ function(add_sc_libraries)
     # and not each other.
     set(dependencies ${SOURCE_LIBRARIES} ${SOURCE_LINK_LIBRARIES})
 
+    # Each library links the same kind of the other modules it names: the shared library their
+    # -shared targets, the static archive their static ones. A shared library that linked a module's
+    # static archive carried its own copy of it, and in a process that also loaded that module, one of
+    # the two copies won (sc-html2pdf's sc-pdflite 4.6 reader in PHP, 2026-11-16).
+    set(shared_package_depends)
     foreach (kind STATIC SHARED)
         set(target "${name}")
         set(what "consolidated static library")
@@ -391,6 +407,29 @@ function(add_sc_libraries)
             set(target "${name}-shared")
             set(what "common shared library")
         endif ()
+        set(kind_dependencies)
+        foreach (dependency IN LISTS dependencies)
+            set(mapped "${dependency}")
+            if (dependency MATCHES "^sc::(sc-[A-Za-z0-9_-]+)$")
+                set(dependency_name "${CMAKE_MATCH_1}")
+                string(REGEX REPLACE "-shared$" "" dependency_module "${dependency_name}")
+                if (kind STREQUAL "SHARED" AND TARGET sc::${dependency_module}-shared)
+                    set(mapped "sc::${dependency_module}-shared")
+                elseif (kind STREQUAL "STATIC" AND TARGET sc::${dependency_module})
+                    set(mapped "sc::${dependency_module}")
+                endif ()
+                if (kind STREQUAL "SHARED" AND mapped MATCHES "-shared$" AND ${dependency_module}_VERSION)
+                    if (dependency_module STREQUAL "sc-core")
+                        set(dependency_package "simply-cpp")
+                    else ()
+                        string(REGEX REPLACE "^sc-" "simply-cpp-" dependency_package "${dependency_module}")
+                    endif ()
+                    list(APPEND shared_package_depends "${dependency_package} (>= ${${dependency_module}_VERSION}~)")
+                endif ()
+            endif ()
+            list(APPEND kind_dependencies "${mapped}")
+        endforeach ()
+        list(REMOVE_DUPLICATES kind_dependencies)
 
         add_library(${target} ${kind} ${SOURCE_OBJECTS})
         add_library(sc::${target} ALIAS ${target})
@@ -401,7 +440,7 @@ function(add_sc_libraries)
         target_include_directories(${target} PUBLIC
                 $<BUILD_INTERFACE:${ARG_INCLUDE_DIR}>
                 $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-        target_link_libraries(${target} PUBLIC ${dependencies})
+        target_link_libraries(${target} PUBLIC ${kind_dependencies})
         list(APPEND SOURCE_LIBRARIES ${target})
         if (${kind} STREQUAL SHARED)
             # Export the shared library from the call that installs its real file.
@@ -411,15 +450,26 @@ function(add_sc_libraries)
     endforeach ()
 
     set(SOURCE_LIBRARIES "${SOURCE_LIBRARIES}" PARENT_SCOPE)
+    # The runtime packages of the modules the shared library links, at least at the versions it was
+    # built against: package_sc_module() adds them to Depends.
+    list(REMOVE_DUPLICATES shared_package_depends)
+    set(SC_SHARED_PACKAGE_DEPENDS "${shared_package_depends}" PARENT_SCOPE)
 endfunction()
 
 # install_sc_module([NAME ...] [COMPATIBILITY ...])
 # Install headers and package config for consumers. COMPATIBILITY is which installed versions satisfy
 # a find_package() asking for one: SameMajorVersion (the default) or, for sc-core, whose every module
 # asks for some 1.x, AnyNewerVersion.
+#
+# Headers: a module whose public headers are in include/sc/<SC_MODULE>/ installs them as
+# <prefix>/include/sc/<SC_MODULE>/..., included as <sc/<module>/x.h>. For one release cycle it
+# also installs a forwarding header at each old flat path (<x.h>, or <COMPAT_SUBDIR/x.h>), which
+# includes the new one; define SC_WARN_OLD_INCLUDES to have them warn. COMPAT_SUBDIR puts the old
+# paths under a folder (sc-pdflite's <pdflite/document.h>), except for the files named in
+# COMPAT_FLAT, which were flat before (<pdflite.h>). The forwarders go with the next major cycle.
 function(install_sc_module)
-    set(one_value_args NAME VERSION CONFIG_TEMPLATE COMPATIBILITY)
-    set(multi_value_args PATH_VARS)
+    set(one_value_args NAME VERSION CONFIG_TEMPLATE COMPATIBILITY COMPAT_SUBDIR)
+    set(multi_value_args PATH_VARS COMPAT_FLAT)
     cmake_parse_arguments(ARG "" "${one_value_args}" "${multi_value_args}" ${ARGN})
 
     set(name "${ARG_NAME}")
@@ -446,7 +496,11 @@ function(install_sc_module)
     list(FILTER sc_static_libraries EXCLUDE REGEX "-shared$")
     install(TARGETS ${sc_static_libraries} EXPORT ${name}Targets
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT development)
-    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ COMPONENT development DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} PATTERN ".DS_Store" EXCLUDE)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ COMPONENT development DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} PATTERN ".DS_Store" EXCLUDE PATTERN "*.in" EXCLUDE)
+    if (SC_MODULE AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/sc/${SC_MODULE}")
+        sc_compat_headers("${CMAKE_CURRENT_SOURCE_DIR}/include/sc/${SC_MODULE}" "sc/${SC_MODULE}"
+                "${ARG_COMPAT_SUBDIR}" "${ARG_COMPAT_FLAT}")
+    endif ()
     install(EXPORT ${name}Targets FILE ${name}Targets.cmake NAMESPACE sc:: DESTINATION ${package_destination} COMPONENT development)
 
     configure_package_config_file(${ARG_CONFIG_TEMPLATE} ${CMAKE_CURRENT_BINARY_DIR}/${name}Config.cmake
@@ -457,6 +511,33 @@ function(install_sc_module)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${name}Config.cmake
             ${CMAKE_CURRENT_BINARY_DIR}/${name}ConfigVersion.cmake
             DESTINATION ${package_destination} COMPONENT development)
+endfunction()
+
+# sc_compat_headers(<header directory> <new include prefix> <old subdir> <files kept flat>)
+# Writes and installs a forwarding header at each old include path of the headers in <header
+# directory>: <old subdir>/<file>, or <file> when old subdir is empty or the file is in <files kept
+# flat>. Each one includes <new include prefix>/<file>.
+function(sc_compat_headers directory prefix old_subdir flat_files)
+    file(GLOB_RECURSE headers RELATIVE "${directory}" "${directory}/*.h" "${directory}/*.hpp")
+    set(compat_root "${CMAKE_CURRENT_BINARY_DIR}/sc-compat-include")
+    file(REMOVE_RECURSE "${compat_root}")
+    foreach (header IN LISTS headers)
+        set(old_path "${header}")
+        if (old_subdir AND NOT header IN_LIST flat_files)
+            set(old_path "${old_subdir}/${header}")
+        endif ()
+        file(WRITE "${compat_root}/${old_path}"
+                "// Forwards the old include path to <${prefix}/${header}>: include that instead.\n"
+                "// Installed for one release cycle; removed with the next major release of the suite.\n"
+                "#pragma once\n"
+                "#ifdef SC_WARN_OLD_INCLUDES\n"
+                "#warning \"<${old_path}> is going away: include <${prefix}/${header}>\"\n"
+                "#endif\n"
+                "#include <${prefix}/${header}>\n")
+    endforeach ()
+    if (headers)
+        install(DIRECTORY "${compat_root}/" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT development)
+    endif ()
 endfunction()
 
 # package_sc_module([DEPENDS ...] [DEV_DEPENDS ...] [BREAKS ...] [REPLACES ...] [DEV_BREAKS ...]
@@ -501,6 +582,19 @@ function(package_sc_module)
     set(CPACK_DEBIAN_RUNTIME_PACKAGE_SECTION "utils")
     set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_SECTION "devel")
     set(CPACK_DEBIAN_LIBRARY_PACKAGE_SECTION "libs")
+    # The modules the shared library links (add_sc_libraries()), unless DEPENDS already names them.
+    foreach (shared_depend IN LISTS SC_SHARED_PACKAGE_DEPENDS)
+        string(REGEX MATCH "^[^ ]+" shared_package "${shared_depend}")
+        set(already FALSE)
+        foreach (depend IN LISTS ARG_DEPENDS)
+            if (depend MATCHES "^${shared_package}( |$)")
+                set(already TRUE)
+            endif ()
+        endforeach ()
+        if (NOT already)
+            list(APPEND ARG_DEPENDS "${shared_depend}")
+        endif ()
+    endforeach ()
     if (ARG_DEPENDS)
         string(REPLACE ";" ", " ARG_DEPENDS_LIST "${ARG_DEPENDS}")
         set(CPACK_DEBIAN_RUNTIME_PACKAGE_DEPENDS "${ARG_DEPENDS_LIST}")
