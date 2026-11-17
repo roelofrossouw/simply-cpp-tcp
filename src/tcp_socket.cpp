@@ -1,4 +1,4 @@
-#include <sc/tcp/tcp_socket.h>
+#include "tcp_socket.h"
 
 #include <fcntl.h>
 #include <netinet/in.h>  // IPPROTO_IPV6, IPV6_V6ONLY

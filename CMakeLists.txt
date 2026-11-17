@@ -17,15 +17,16 @@ set(SOURCE_OBJECTS include/sc/tcp/tcp.h)
 set(SOURCE_LIBRARIES)
 set(SOURCE_LINK_LIBRARIES)
 
-# The front ends (tcp_server, tcp_client, tcp_connection) and the classes under them, in sc::tcp:
-# the socket, the poller (epoll or kqueue), the worker pool with its strands, and the event loop.
-add_sc_object(tcp_socket PUBLIC_LINK_LIBRARIES sc::sc-core Threads::Threads)
-add_sc_object(tcp_poller)
-add_sc_object(tcp_worker_pool)
-add_sc_object(tcp_event_loop SOURCES include/sc/tcp/tcp_handlers.h)
-add_sc_object(tcp_connection SOURCES include/sc/tcp/tcp_connection_state.h)
-add_sc_object(tcp_server)
-add_sc_object(tcp_client)
+# The front ends (tcp_server, tcp_client, tcp_connection) are the public API. The classes under them, in
+# sc::tcp (the socket, the poller (epoll or kqueue), the worker pool with its strands, and the event loop),
+# are private: src/, built with tcp_connection.
+add_sc_object(tcp_connection
+        SOURCES src/tcp_connection_state.h src/tcp_socket.cpp src/tcp_socket.h src/tcp_poller.cpp src/tcp_poller.h
+                src/tcp_worker_pool.cpp src/tcp_worker_pool.h src/tcp_event_loop.cpp src/tcp_event_loop.h
+                include/sc/tcp/tcp_handlers.h
+        PUBLIC_LINK_LIBRARIES sc::sc-core Threads::Threads)
+add_sc_object(tcp_server SOURCES src/tcp_event_loop.h)
+add_sc_object(tcp_client SOURCES src/tcp_event_loop.h)
 
 add_sc_libraries(DESCRIPTION "simply-cpp TCP servers and clients")
 target_compile_features(sc-tcp PUBLIC cxx_std_20)

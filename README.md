@@ -82,9 +82,9 @@ gone, and throws `std::runtime_error` (saying where and why) when it couldn't co
 `wait_until_connected()`, `connection()` and `send()` (false while not connected) work from any
 thread.
 
-## The classes under them (namespace `sc::tcp`)
+## The classes under them (namespace `sc::tcp`, private)
 
-Each in a header of its own, for programs that want them directly:
+Since 4.0.0 they're private (in `src/`, not installed); the front ends above are the API:
 
 | Header | Class | |
 |---|---|---|
