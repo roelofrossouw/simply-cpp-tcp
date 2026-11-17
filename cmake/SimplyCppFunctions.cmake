@@ -7,13 +7,6 @@ if (SC_MODULE)
     set(CMAKE_CXX_EXTENSIONS OFF)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     option(SC_BUILD_EXAMPLES "Build and install the module's examples" ON)
-    # Nothing a suite library or program takes from a static archive is exported (ELF): a program or
-    # shared object that links some module's static archive and also loads that module's shared library
-    # (directly, or under another module) would otherwise hand its own copy of the code to every caller
-    # in the process. Darwin's two-level namespace already keeps them apart.
-    if (UNIX AND NOT APPLE)
-        add_link_options("LINKER:--exclude-libs,ALL")
-    endif ()
 endif ()
 
 include(GNUInstallDirs)
@@ -31,7 +24,7 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-set(SC_HELPERS_VERSION 34)
+set(SC_HELPERS_VERSION 35)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
