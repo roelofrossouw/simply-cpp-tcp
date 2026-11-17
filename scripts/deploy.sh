@@ -42,7 +42,7 @@ if [ -n "$suite_path" ] && [ -d "$suite_path/private/$module" ]; then
     rsync -av --no-owner --no-group "$suite_path/private/$module/" "$user@$server:/var/www/build/private/$module/" \
         --exclude="*.bundle" --delete || exit
 fi
-ssh "$user@$server" "if [ -r /etc/simply-cpp/test.env ]; then set -a; . /etc/simply-cpp/test.env; set +a; fi; exec /var/www/build/$module/scripts/run.sh"
+ssh "$user@$server" "if [ -r /etc/simply-cpp/test.env ]; then set -a; . /etc/simply-cpp/test.env; set +a; fi; ${SC_REPUBLISH:+SC_REPUBLISH=1 }exec /var/www/build/$module/scripts/run.sh"
 remote_result=$?
 popd || exit
 exit $remote_result

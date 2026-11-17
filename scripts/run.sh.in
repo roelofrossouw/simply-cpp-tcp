@@ -42,7 +42,12 @@ if ! configure_build_test; then
     configure_build_test || exit
 fi
 
-cmake --install $build_directory
+# No cmake --install here: cpack below packages the build tree by itself, and the modules built
+# after this one get it from apt (publish-apt runs apt-get update after each deploy). Installed
+# into /usr/local, it sat beside the package's /usr copy: CMake prefers /usr/local, so later
+# builds picked up whatever version was last deployed there, and with only some modules there
+# (build-noble, 2026-11-12) a build included two copies of sc-core's headers ("redefinition of
+# concept sc::Numeric", #pragma once is per path).
 
 pushd $build_directory || exit
 rm -rf *.deb
@@ -59,6 +64,20 @@ popd || exit
 echo "Updating repository $module $version"
 pushd /var/www/build/repo || exit
 export GNUPGHOME=/var/www/build/signing
+# A version the repository already has stays as it is. Rebuilt, the same version's package
+# differs (build stamps), and apt and the proxies, which keep the first copy, then refuse it ("File
+# has unexpected size"). A new version publishes; SC_REPUBLISH=1 replaces one on purpose.
+new_debs=()
+for deb in "${built_debs[@]}"; do
+    package=$(dpkg-deb -f "$deb" Package)
+    deb_version=$(dpkg-deb -f "$deb" Version)
+    if [ -z "${SC_REPUBLISH:-}" ] && reprepro list $ubuntu_codename "$package" | awk -v p="$package" -v v="$deb_version" '$2 == p && $3 == v { found = 1 } END { exit !found }'; then
+        echo "$package $deb_version is already in the repository for $ubuntu_codename: kept, not replaced (publish a new version, or SC_REPUBLISH=1 to replace it)"
+    else
+        new_debs+=("$deb")
+    fi
+done
+built_debs=("${new_debs[@]}")
 # The packages this run built, by their own names (an app's isn't its module's: html2pdf, not
 # simply-cpp-html2pdf, which removing would have taken from the repository).
 for deb in "${built_debs[@]}"; do
