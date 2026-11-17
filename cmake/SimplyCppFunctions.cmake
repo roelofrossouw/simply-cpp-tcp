@@ -1,3 +1,12 @@
+# Several copies of these helpers get included in one configure: sc-core's, and the copy each module's
+# package config includes. A copy older than one already included returns here instead of replacing
+# its functions with older ones (helpers 36 on; copies before 36 don't check). Keep both 36s here in step
+# with SC_HELPERS_VERSION below.
+if (DEFINED SC_HELPERS_LOADED_VERSION AND SC_HELPERS_LOADED_VERSION GREATER 36)
+    return()
+endif ()
+set(SC_HELPERS_LOADED_VERSION 36)
+
 # Keep project()/cmake_minimum_required() in the top-level CMakeLists.txt.
 # Only the post-project C++/PIC defaults are safe here.
 # This file is also loaded by downstream consumers via find_package(), where SC_MODULE is unset.
@@ -24,7 +33,7 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-set(SC_HELPERS_VERSION 35)
+set(SC_HELPERS_VERSION 36)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
