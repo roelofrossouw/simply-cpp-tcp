@@ -1,10 +1,10 @@
 #pragma once
 
-#include "tcp_poller.h"
-#include "tcp_socket.h"
-#include "tcp_worker_pool.h"
+#include <sc/tcp/tcp_poller.h>
+#include <sc/tcp/tcp_socket.h>
+#include <sc/tcp/tcp_worker_pool.h>
 
-#include <tcp_connection.h>
+#include <sc/tcp/tcp_connection.h>
 
 #include <any>
 #include <atomic>

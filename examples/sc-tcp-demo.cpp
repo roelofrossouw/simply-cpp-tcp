@@ -5,8 +5,8 @@
 //     sc-tcp-demo                               # the server, on 127.0.0.1:7000
 //     sc-tcp-demo --connect 127.0.0.1:7000      # a client, in another terminal
 
-#include <params.h>
-#include <tcp.h>
+#include <sc/core/params.h>
+#include <sc/tcp/tcp.h>
 
 #include <algorithm>
 #include <cctype>

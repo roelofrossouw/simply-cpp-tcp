@@ -13,7 +13,7 @@ It was `sc-tcp-server` up to 1.0.2: the packages `simply-cpp-tcp(-dev)` replace
 **Documentation:** the [simply-cpp wiki](https://github.com/roelofrossouw/simply-cpp/wiki) has a [TCP guide](https://github.com/roelofrossouw/simply-cpp/wiki/TCP) and the [sc-tcp reference](https://github.com/roelofrossouw/simply-cpp/wiki/Reference-sc-tcp), plus [getting started](https://github.com/roelofrossouw/simply-cpp/wiki/Getting-Started) for the whole suite.
 
 ```cpp
-#include <tcp.h>
+#include <sc/tcp/tcp.h>
 
 std::size_t received(sc::tcp_connection &c, std::string_view input) {
     if (input.size() < 4) return 0;      // not a whole frame yet: wait for more

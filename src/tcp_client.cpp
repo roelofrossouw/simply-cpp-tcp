@@ -1,6 +1,6 @@
-#include "tcp_event_loop.h"
+#include <sc/tcp/tcp_event_loop.h>
 
-#include <tcp_client.h>
+#include <sc/tcp/tcp_client.h>
 
 #include <algorithm>
 #include <condition_variable>

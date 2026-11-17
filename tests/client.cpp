@@ -2,7 +2,7 @@
 // the server goes and comes back, failing cleanly without one, sending while not connected, ticks
 // and the idle timeout, stopping.
 
-#include <tcp.h>
+#include <sc/tcp/tcp.h>
 #include <sc_test.h>
 
 #include <atomic>

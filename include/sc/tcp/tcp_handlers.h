@@ -1,8 +1,8 @@
 #pragma once
 
-#include "tcp_connection.h"
+#include <sc/tcp/tcp_connection.h>
 
-#include <log_level.h>
+#include <sc/core/log_level.h>
 
 #include <cstddef>
 #include <cstdint>

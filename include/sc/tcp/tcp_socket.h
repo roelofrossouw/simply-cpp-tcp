@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ip_endpoint.h>
+#include <sc/core/ip_endpoint.h>
 
 #include <cstddef>
 #include <optional>

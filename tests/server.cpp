@@ -3,7 +3,7 @@
 // threads, close() after output, handlers that throw, input and output limits, the connection
 // limit, stopping with connections open, and binding errors.
 
-#include <tcp.h>
+#include <sc/tcp/tcp.h>
 #include <sc_test.h>
 
 #include <arpa/inet.h>

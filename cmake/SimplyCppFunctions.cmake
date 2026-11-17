@@ -24,7 +24,7 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-set(SC_HELPERS_VERSION 31)
+set(SC_HELPERS_VERSION 32)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
@@ -413,10 +413,12 @@ function(add_sc_libraries)
     set(SOURCE_LIBRARIES "${SOURCE_LIBRARIES}" PARENT_SCOPE)
 endfunction()
 
-# install_sc_module([NAME ...])
-# Install headers and package config for consumers.
+# install_sc_module([NAME ...] [COMPATIBILITY ...])
+# Install headers and package config for consumers. COMPATIBILITY is which installed versions satisfy
+# a find_package() asking for one: SameMajorVersion (the default) or, for sc-core, whose every module
+# asks for some 1.x, AnyNewerVersion.
 function(install_sc_module)
-    set(one_value_args NAME VERSION CONFIG_TEMPLATE)
+    set(one_value_args NAME VERSION CONFIG_TEMPLATE COMPATIBILITY)
     set(multi_value_args PATH_VARS)
     cmake_parse_arguments(ARG "" "${one_value_args}" "${multi_value_args}" ${ARGN})
 
@@ -426,6 +428,9 @@ function(install_sc_module)
     endif ()
     if (NOT ARG_VERSION)
         set(ARG_VERSION "${SC_VERSION}")
+    endif ()
+    if (NOT ARG_COMPATIBILITY)
+        set(ARG_COMPATIBILITY SameMajorVersion)
     endif ()
     if (NOT ARG_CONFIG_TEMPLATE)
         set(ARG_CONFIG_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/${name}Config.cmake.in")
@@ -448,7 +453,7 @@ function(install_sc_module)
             INSTALL_DESTINATION ${package_destination}
             PATH_VARS ${ARG_PATH_VARS})
     write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/${name}ConfigVersion.cmake
-            VERSION ${ARG_VERSION} COMPATIBILITY SameMajorVersion)
+            VERSION ${ARG_VERSION} COMPATIBILITY ${ARG_COMPATIBILITY})
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${name}Config.cmake
             ${CMAKE_CURRENT_BINARY_DIR}/${name}ConfigVersion.cmake
             DESTINATION ${package_destination} COMPONENT development)

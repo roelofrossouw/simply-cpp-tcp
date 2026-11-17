@@ -1,9 +1,9 @@
 #pragma once
 
-#include "tcp_connection.h"
-#include "tcp_handlers.h"
+#include <sc/tcp/tcp_connection.h>
+#include <sc/tcp/tcp_handlers.h>
 
-#include <ip_endpoint.h>
+#include <sc/core/ip_endpoint.h>
 
 #include <chrono>
 #include <cstddef>
