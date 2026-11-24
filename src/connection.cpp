@@ -1,37 +1,37 @@
 #include "tcp_connection_state.h"
 
-#include <sc/tcp/tcp_connection.h>
+#include <sc/tcp/connection.h>
 
 #include <algorithm>
 #include <cerrno>
 
 namespace sc {
-    std::string_view tcp_close_reason_name(const tcp_close_reason reason) {
+    std::string_view tcp::close_reason_name(const tcp::close_reason reason) {
         switch (reason) {
-            case tcp_close_reason::peer: return "peer";
-            case tcp_close_reason::closed: return "closed";
-            case tcp_close_reason::idle: return "idle";
-            case tcp_close_reason::error: return "error";
-            case tcp_close_reason::input_overflow: return "input_overflow";
-            case tcp_close_reason::output_overflow: return "output_overflow";
-            case tcp_close_reason::stopped: return "stopped";
+            case tcp::close_reason::peer: return "peer";
+            case tcp::close_reason::closed: return "closed";
+            case tcp::close_reason::idle: return "idle";
+            case tcp::close_reason::error: return "error";
+            case tcp::close_reason::input_overflow: return "input_overflow";
+            case tcp::close_reason::output_overflow: return "output_overflow";
+            case tcp::close_reason::stopped: return "stopped";
         }
         return "unknown";
     }
 
-    tcp_connection::tcp_connection(std::shared_ptr<tcp::connection_state> state) : state_(std::move(state)) {
+    tcp::connection::connection(std::shared_ptr<tcp::connection_state> state) : state_(std::move(state)) {
     }
 
-    tcp_connection::~tcp_connection() = default;
+    tcp::connection::~connection() = default;
 
-    std::uint64_t tcp_connection::id() const { return state_->id; }
-    const ip_endpoint &tcp_connection::remote() const { return state_->remote; }
-    const ip_endpoint &tcp_connection::local() const { return state_->local; }
-    std::chrono::system_clock::time_point tcp_connection::connected_at() const { return state_->connected_at; }
-    bool tcp_connection::open() const { return !state_->closing(); }
-    bool tcp_connection::send(const std::string_view bytes) { return state_->send(bytes); }
-    void tcp_connection::close() { state_->close(); }
-    std::any &tcp_connection::context() { return state_->context; }
+    std::uint64_t tcp::connection::id() const { return state_->id; }
+    const ip_endpoint &tcp::connection::remote() const { return state_->remote; }
+    const ip_endpoint &tcp::connection::local() const { return state_->local; }
+    std::chrono::system_clock::time_point tcp::connection::connected_at() const { return state_->connected_at; }
+    bool tcp::connection::open() const { return !state_->closing(); }
+    bool tcp::connection::send(const std::string_view bytes) { return state_->send(bytes); }
+    void tcp::connection::close() { state_->close(); }
+    std::any &tcp::connection::context() { return state_->context; }
 }
 
 namespace sc::tcp {
@@ -56,14 +56,14 @@ namespace sc::tcp {
                 } else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
                     break;
                 } else {
-                    request_close(tcp_close_reason::error);
+                    request_close(tcp::close_reason::error);
                     return false;
                 }
             }
         }
         if (offset < bytes.size()) {
             if (output_.size() + bytes.size() - offset > limits_.max_output) {
-                request_close(tcp_close_reason::output_overflow);
+                request_close(tcp::close_reason::output_overflow);
                 return false;
             }
             const bool was_empty = output_.empty();
@@ -75,10 +75,10 @@ namespace sc::tcp {
 
     void connection_state::close() {
         const std::lock_guard lock{output_mutex_};
-        request_close(tcp_close_reason::closed);
+        request_close(tcp::close_reason::closed);
     }
 
-    bool connection_state::read_available(tcp_close_reason &reason, std::uint64_t &received) {
+    bool connection_state::read_available(tcp::close_reason &reason, std::uint64_t &received) {
         char buffer[16384];
         bool got = false;
         while (true) {
@@ -89,19 +89,19 @@ namespace sc::tcp {
                 const std::lock_guard lock{input_mutex_};
                 arrived_.append(buffer, static_cast<std::size_t>(n));
                 if (arrived_.size() + working_size_.load() > limits_.max_input) {
-                    reason = tcp_close_reason::input_overflow;
+                    reason = tcp::close_reason::input_overflow;
                     return false;
                 }
                 continue;
             }
             if (n == 0) {
-                reason = tcp_close_reason::peer;
+                reason = tcp::close_reason::peer;
                 if (got) last_received = steady::now();
                 return false;
             }
             if (errno == EINTR) continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-            reason = errno == ECONNRESET ? tcp_close_reason::peer : tcp_close_reason::error;
+            reason = errno == ECONNRESET ? tcp::close_reason::peer : tcp::close_reason::error;
             return false;
         }
         if (got) last_received = steady::now();
@@ -122,7 +122,7 @@ namespace sc::tcp {
                 return false;
             } else {
                 output_.clear();
-                request_close(tcp_close_reason::error);
+                request_close(tcp::close_reason::error);
                 return true;
             }
         }
@@ -135,7 +135,7 @@ namespace sc::tcp {
         return output_.empty();
     }
 
-    void connection_state::request_close(const tcp_close_reason reason) {
+    void connection_state::request_close(const tcp::close_reason reason) {
         bool expected = false;
         if (closing_.compare_exchange_strong(expected, true)) {
             close_reason_ = reason;

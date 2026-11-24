@@ -1,6 +1,6 @@
 #pragma once
 
-#include <sc/core/ip_endpoint.h>
+#include <sc/net/ip_endpoint.h>
 
 #include <cstddef>
 #include <optional>
@@ -9,7 +9,7 @@
 
 // A TCP socket, owned: its file descriptor is closed when it goes. The system calls sc-tcp needs
 // (listen, accept, a non-blocking connect, reads and writes), nothing more; addresses come from
-// sc::ip_endpoint. tcp_server and tcp_client use it; so may anything else working with sockets.
+// sc::ip_endpoint. tcp::server and tcp::client use it; so may anything else working with sockets.
 namespace sc::tcp {
     class socket {
     public:

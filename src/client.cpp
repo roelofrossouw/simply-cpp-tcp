@@ -1,6 +1,6 @@
 #include "tcp_event_loop.h"
 
-#include <sc/tcp/tcp_client.h>
+#include <sc/tcp/client.h>
 
 #include <algorithm>
 #include <condition_variable>
@@ -8,9 +8,9 @@
 #include <optional>
 #include <stdexcept>
 
-class sc::tcp_client::implementation {
+class sc::tcp::client::implementation {
 public:
-    implementation(ip_endpoint server, tcp_handlers handlers, const tcp_client_options &options)
+    implementation(ip_endpoint server, tcp::handlers handlers, const tcp::client_options &options)
         : server_(std::move(server)), handlers_(std::move(handlers)), options_(options), delay_(options.reconnect) {
         if (server_.host.empty() || server_.port <= 0) throw std::invalid_argument("sc-tcp: a client needs a host and a port");
     }
@@ -29,7 +29,7 @@ public:
                 handlers_, tcp::loop_options{options_.threads, options_.idle_timeout, 1,
                                                     {options_.max_input, options_.max_output, options_.tick}});
         }
-        loop->on_closed([this, loop](const std::shared_ptr<tcp_connection> &, const tcp_close_reason) {
+        loop->on_closed([this, loop](const std::shared_ptr<tcp::connection> &, const tcp::close_reason) {
             {
                 const std::lock_guard lock{mutex_};
                 connection_.reset();
@@ -66,21 +66,21 @@ public:
         return connection_ != nullptr;
     }
 
-    std::shared_ptr<tcp_connection> connection() const {
+    std::shared_ptr<tcp::connection> connection() const {
         const std::lock_guard lock{mutex_};
         return connection_;
     }
 
-    tcp_stats stats() const {
+    tcp::stats stats() const {
         const auto loop = current();
-        return loop ? loop->stats() : tcp_stats{};
+        return loop ? loop->stats() : tcp::stats{};
     }
 
 private:
     // A connection attempt, on the I/O thread.
     void attempt(const std::shared_ptr<tcp::event_loop> &loop) {
         loop->connect(server_, options_.connect_timeout,
-                      [this](const std::shared_ptr<tcp_connection> &c) {
+                      [this](const std::shared_ptr<tcp::connection> &c) {
                           delay_ = options_.reconnect; // connected: back to the first delay
                           {
                               const std::lock_guard lock{mutex_};
@@ -111,30 +111,30 @@ private:
     }
 
     ip_endpoint server_;
-    tcp_handlers handlers_;
-    tcp_client_options options_;
+    tcp::handlers handlers_;
+    tcp::client_options options_;
     std::chrono::milliseconds delay_; // the I/O thread's
     mutable std::mutex mutex_;
     std::condition_variable changed_;
     bool running_ = false, ended_ = false;
     std::atomic<bool> stop_asked_{false};
     std::optional<std::string> failure_;
-    std::shared_ptr<tcp_connection> connection_;
+    std::shared_ptr<tcp::connection> connection_;
     std::shared_ptr<tcp::event_loop> loop_;
 };
 
-sc::tcp_client::tcp_client(ip_endpoint server, tcp_handlers handlers, tcp_client_options options)
+sc::tcp::client::client(ip_endpoint server, tcp::handlers handlers, tcp::client_options options)
     : implementation_(std::make_unique<implementation>(std::move(server), std::move(handlers), options)) {
 }
 
-sc::tcp_client::~tcp_client() = default;
-void sc::tcp_client::run() { implementation_->run(); }
-void sc::tcp_client::stop() { implementation_->stop(); }
-bool sc::tcp_client::wait_until_connected(const std::chrono::milliseconds timeout) { return implementation_->wait_until_connected(timeout); }
-std::shared_ptr<sc::tcp_connection> sc::tcp_client::connection() const { return implementation_->connection(); }
-bool sc::tcp_client::send(const std::string_view bytes) {
+sc::tcp::client::~client() = default;
+void sc::tcp::client::run() { implementation_->run(); }
+void sc::tcp::client::stop() { implementation_->stop(); }
+bool sc::tcp::client::wait_until_connected(const std::chrono::milliseconds timeout) { return implementation_->wait_until_connected(timeout); }
+std::shared_ptr<sc::tcp::connection> sc::tcp::client::connection() const { return implementation_->connection(); }
+bool sc::tcp::client::send(const std::string_view bytes) {
     const auto c = implementation_->connection();
     return c && c->send(bytes);
 }
-sc::tcp_stats sc::tcp_client::stats() const { return implementation_->stats(); }
-void sc::tcp_client::log_level(const sc::log_level level) { tcp_log_level(level); }
+sc::tcp::stats sc::tcp::client::stats() const { return implementation_->stats(); }
+void sc::tcp::client::log_level(const sc::log_level level) { tcp::log_level(level); }

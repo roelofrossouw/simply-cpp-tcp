@@ -1,14 +1,14 @@
 #include "tcp_event_loop.h"
 
-#include <sc/tcp/tcp_server.h>
+#include <sc/tcp/server.h>
 
 #include <condition_variable>
 #include <mutex>
 #include <stdexcept>
 
-class sc::tcp_server::implementation {
+class sc::tcp::server::implementation {
 public:
-    implementation(ip_endpoints listen, tcp_handlers handlers, const tcp_server_options &options)
+    implementation(ip_endpoints listen, tcp::handlers handlers, const tcp::server_options &options)
         : endpoints_(std::move(listen)), handlers_(std::move(handlers)), options_(options) {
         if (endpoints_.empty()) throw std::invalid_argument("sc-tcp: nothing to listen on");
     }
@@ -67,14 +67,14 @@ public:
         return loop ? loop->listening() : std::vector<ip_endpoint>{};
     }
 
-    tcp_stats stats() const {
+    tcp::stats stats() const {
         const auto loop = current();
-        return loop ? loop->stats() : tcp_stats{};
+        return loop ? loop->stats() : tcp::stats{};
     }
 
-    std::vector<std::shared_ptr<tcp_connection>> connections() const {
+    std::vector<std::shared_ptr<tcp::connection>> connections() const {
         const auto loop = current();
-        return loop ? loop->connections() : std::vector<std::shared_ptr<tcp_connection>>{};
+        return loop ? loop->connections() : std::vector<std::shared_ptr<tcp::connection>>{};
     }
 
 private:
@@ -84,23 +84,23 @@ private:
     }
 
     ip_endpoints endpoints_;
-    tcp_handlers handlers_;
-    tcp_server_options options_;
+    tcp::handlers handlers_;
+    tcp::server_options options_;
     mutable std::mutex mutex_;
     std::condition_variable changed_;
     bool running_ = false, accepting_ = false, failed_ = false;
     std::shared_ptr<tcp::event_loop> loop_;
 };
 
-sc::tcp_server::tcp_server(ip_endpoints listen, tcp_handlers handlers, tcp_server_options options)
+sc::tcp::server::server(ip_endpoints listen, tcp::handlers handlers, tcp::server_options options)
     : implementation_(std::make_unique<implementation>(std::move(listen), std::move(handlers), options)) {
 }
 
-sc::tcp_server::~tcp_server() = default;
-void sc::tcp_server::run() { implementation_->run(); }
-void sc::tcp_server::stop() { implementation_->stop(); }
-bool sc::tcp_server::wait_until_running(const std::chrono::milliseconds timeout) { return implementation_->wait_until_running(timeout); }
-std::vector<sc::ip_endpoint> sc::tcp_server::listening() const { return implementation_->listening(); }
-sc::tcp_stats sc::tcp_server::stats() const { return implementation_->stats(); }
-std::vector<std::shared_ptr<sc::tcp_connection>> sc::tcp_server::connections() const { return implementation_->connections(); }
-void sc::tcp_server::log_level(const sc::log_level level) { tcp_log_level(level); }
+sc::tcp::server::~server() = default;
+void sc::tcp::server::run() { implementation_->run(); }
+void sc::tcp::server::stop() { implementation_->stop(); }
+bool sc::tcp::server::wait_until_running(const std::chrono::milliseconds timeout) { return implementation_->wait_until_running(timeout); }
+std::vector<sc::ip_endpoint> sc::tcp::server::listening() const { return implementation_->listening(); }
+sc::tcp::stats sc::tcp::server::stats() const { return implementation_->stats(); }
+std::vector<std::shared_ptr<sc::tcp::connection>> sc::tcp::server::connections() const { return implementation_->connections(); }
+void sc::tcp::server::log_level(const sc::log_level level) { tcp::log_level(level); }

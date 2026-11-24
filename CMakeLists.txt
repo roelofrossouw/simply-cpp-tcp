@@ -10,23 +10,24 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 
 # sc-core: ip_endpoint (it resolves and converts socket addresses), log_level, and params for the
 # demo. No other dependency: epoll (Linux) or kqueue (macOS) and POSIX sockets.
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 3.0.0)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 4.0.0)
+find_or_install_package(sc-net simply-cpp-net-dev simply-cpp-net 1.0.0)
 find_package(Threads REQUIRED)
 
 set(SOURCE_OBJECTS include/sc/tcp/tcp.h)
 set(SOURCE_LIBRARIES)
 set(SOURCE_LINK_LIBRARIES)
 
-# The front ends (tcp_server, tcp_client, tcp_connection) are the public API. The classes under them, in
+# The front ends (server, client, connection) are the public API. The classes under them, in
 # sc::tcp (the socket, the poller (epoll or kqueue), the worker pool with its strands, and the event loop),
-# are private: src/, built with tcp_connection.
-add_sc_object(tcp_connection
+# are private: src/, built with connection.
+add_sc_object(connection
         SOURCES src/tcp_connection_state.h src/tcp_socket.cpp src/tcp_socket.h src/tcp_poller.cpp src/tcp_poller.h
                 src/tcp_worker_pool.cpp src/tcp_worker_pool.h src/tcp_event_loop.cpp src/tcp_event_loop.h
-                include/sc/tcp/tcp_handlers.h
-        PUBLIC_LINK_LIBRARIES sc::sc-core Threads::Threads)
-add_sc_object(tcp_server SOURCES src/tcp_event_loop.h)
-add_sc_object(tcp_client SOURCES src/tcp_event_loop.h)
+                include/sc/tcp/handlers.h
+        PUBLIC_LINK_LIBRARIES sc::sc-core sc::sc-net Threads::Threads)
+add_sc_object(server SOURCES src/tcp_event_loop.h)
+add_sc_object(client SOURCES src/tcp_event_loop.h)
 
 add_sc_libraries(DESCRIPTION "simply-cpp TCP servers and clients")
 target_compile_features(sc-tcp PUBLIC cxx_std_20)
@@ -45,6 +46,6 @@ endif ()
 add_sc_example(sc-tcp-demo)
 
 # It was simply-cpp-tcp-server up to 1.0.2: these packages take its place (and its files).
-package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 3.0.0~)"
+package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 4.0.0~)" "simply-cpp-net-dev (>= 1.0.0~)"
         BREAKS "simply-cpp-tcp-server (<< 2.0.0~)" REPLACES "simply-cpp-tcp-server (<< 2.0.0~)"
         DEV_BREAKS "simply-cpp-tcp-server-dev (<< 2.0.0~)" DEV_REPLACES "simply-cpp-tcp-server-dev (<< 2.0.0~)")

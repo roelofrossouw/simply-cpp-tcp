@@ -1,6 +1,6 @@
 #pragma once
 
-#include <sc/core/ip_endpoint.h>
+#include <sc/net/ip_endpoint.h>
 
 #include <any>
 #include <chrono>
@@ -8,36 +8,34 @@
 #include <memory>
 #include <string_view>
 
-namespace sc {
-    namespace tcp {
-        class event_loop;
-        struct connection_state;
-    }
+namespace sc::tcp {
+    class event_loop;
+    struct connection_state;
 
-    // Why a connection ended, for tcp_handlers::disconnected.
-    enum class tcp_close_reason {
+    // Why a connection ended, for tcp::handlers::disconnected.
+    enum class close_reason {
         peer,            // the other side closed it
-        closed,          // tcp_connection::close(), or the client was stopped
+        closed,          // tcp::connection::close(), or the client was stopped
         idle,            // nothing received for the idle timeout
         error,           // a socket error, or a handler threw
         input_overflow,  // more unconsumed input than max_input
         output_overflow, // more unsent output than max_output
-        stopped,         // tcp_server::stop() or tcp_client::stop()
+        stopped,         // tcp::server::stop() or tcp::client::stop()
         server_stopped = stopped, // its name before 2.0.0
     };
 
     // "peer", "closed", "idle" ...
-    std::string_view tcp_close_reason_name(tcp_close_reason reason);
+    std::string_view close_reason_name(tcp::close_reason reason);
 
     // One TCP connection, a server's to a client or a client's to its server, as the handlers get
-    // it. tcp_server::connections() and tcp_client::connection() hand it out as a shared_ptr, which
+    // it. tcp::server::connections() and tcp::client::connection() hand it out as a shared_ptr, which
     // may be kept: once the connection is closed it fails cleanly. Everything here may be called
     // from any thread.
-    class tcp_connection {
+    class connection {
     public:
-        ~tcp_connection();
-        tcp_connection(const tcp_connection &) = delete;
-        tcp_connection &operator=(const tcp_connection &) = delete;
+        ~connection();
+        connection(const tcp::connection &) = delete;
+        tcp::connection &operator=(const tcp::connection &) = delete;
 
         [[nodiscard]] std::uint64_t id() const;          // unique in its server's or client's life
         [[nodiscard]] const ip_endpoint &remote() const; // the other end's address and port
@@ -49,7 +47,7 @@ namespace sc {
         // closed or closing, or when it would hold more than max_output (it's then closed).
         bool send(std::string_view bytes);
         // Closes it once what was sent is out (within 5 s); disconnected follows with
-        // tcp_close_reason::closed.
+        // tcp::close_reason::closed.
         void close();
 
         // The handlers' own state for this connection (a parser, a device ID ...): only the
@@ -57,8 +55,8 @@ namespace sc {
         [[nodiscard]] std::any &context();
 
     private:
-        friend class tcp::event_loop;
-        explicit tcp_connection(std::shared_ptr<tcp::connection_state> state);
+        friend class event_loop;
+        explicit connection(std::shared_ptr<tcp::connection_state> state);
         std::shared_ptr<tcp::connection_state> state_;
     };
 }

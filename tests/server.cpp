@@ -85,7 +85,7 @@ namespace {
     };
 
     // "<n>:<n bytes>" frames: received answers each with "ok:<payload>\n".
-    std::size_t framed(sc::tcp_connection &c, const std::string_view input) {
+    std::size_t framed(sc::tcp::connection &c, const std::string_view input) {
         const auto colon = input.find(':');
         if (colon == std::string_view::npos) return 0;
         const auto length = std::stoul(std::string{input.substr(0, colon)});
@@ -107,9 +107,9 @@ namespace {
     const sc::ip_endpoints any_port{{"127.0.0.1", 0}}; // the system picks a free port
 
     struct running {
-        sc::tcp_server &server;
+        sc::tcp::server &server;
         std::thread thread;
-        explicit running(sc::tcp_server &s) : server(s), thread([&s] { s.run(); }) {
+        explicit running(sc::tcp::server &s) : server(s), thread([&s] { s.run(); }) {
             if (!s.wait_until_running()) throw std::runtime_error("server didn't start");
         }
         ~running() {
@@ -127,12 +127,12 @@ int main() {
     {
         std::mutex m;
         std::vector<string> seen;
-        sc::tcp_server server{any_port, {
-            .connected = [&](sc::tcp_connection &c) { const std::lock_guard l{m}; seen.push_back("connected " + c.remote().host); },
+        sc::tcp::server server{any_port, {
+            .connected = [&](sc::tcp::connection &c) { const std::lock_guard l{m}; seen.push_back("connected " + c.remote().host); },
             .received = framed,
-            .disconnected = [&](sc::tcp_connection &, const sc::tcp_close_reason reason) {
+            .disconnected = [&](sc::tcp::connection &, const sc::tcp::close_reason reason) {
                 const std::lock_guard l{m};
-                seen.push_back("disconnected " + string{sc::tcp_close_reason_name(reason)});
+                seen.push_back("disconnected " + string{sc::tcp::close_reason_name(reason)});
             },
         }};
         running r{server};
@@ -159,7 +159,7 @@ int main() {
 
     SECTION("Many clients at once: each one's frames answered, in order");
     {
-        sc::tcp_server server{any_port, {.received = framed}, {.threads = 4}};
+        sc::tcp::server server{any_port, {.received = framed}, {.threads = 4}};
         running r{server};
         constexpr int clients = 100, frames = 50;
         std::atomic<int> good{0};
@@ -187,7 +187,7 @@ int main() {
     {
         std::mutex m;
         std::set<int> ports;
-        sc::tcp_server server{sc::ip_endpoints{{"127.0.0.1", 0}, {"127.0.0.1", 0}}, {.connected = [&](sc::tcp_connection &c) {
+        sc::tcp::server server{sc::ip_endpoints{{"127.0.0.1", 0}, {"127.0.0.1", 0}}, {.connected = [&](sc::tcp::connection &c) {
             const std::lock_guard l{m};
             ports.insert(c.local().port);
         }}};
@@ -203,10 +203,10 @@ int main() {
     {
         std::atomic<int> ticks{0};
         std::atomic<int> idle{0};
-        sc::tcp_server server{any_port, {
-            .tick = [&](sc::tcp_connection &) { ++ticks; },
-            .disconnected = [&](sc::tcp_connection &, const sc::tcp_close_reason reason) {
-                if (reason == sc::tcp_close_reason::idle) ++idle;
+        sc::tcp::server server{any_port, {
+            .tick = [&](sc::tcp::connection &) { ++ticks; },
+            .disconnected = [&](sc::tcp::connection &, const sc::tcp::close_reason reason) {
+                if (reason == sc::tcp::close_reason::idle) ++idle;
             },
         }, {.idle_timeout = 700ms, .tick = 100ms}};
         running r{server};
@@ -219,8 +219,8 @@ int main() {
     SECTION("Sending from another thread; close() delivers what was sent first");
     {
         std::atomic<int> closed{0};
-        sc::tcp_server server{any_port, {.disconnected = [&](sc::tcp_connection &, const sc::tcp_close_reason reason) {
-            if (reason == sc::tcp_close_reason::closed) ++closed;
+        sc::tcp::server server{any_port, {.disconnected = [&](sc::tcp::connection &, const sc::tcp::close_reason reason) {
+            if (reason == sc::tcp::close_reason::closed) ++closed;
         }}};
         running r{server};
         client c{r.port()};
@@ -240,16 +240,16 @@ int main() {
     SECTION("A handler that throws closes its connection, not the server");
     {
         std::atomic<int> errors{0};
-        sc::tcp_server server{any_port, {
-            .received = [](sc::tcp_connection &c, const std::string_view input) -> std::size_t {
+        sc::tcp::server server{any_port, {
+            .received = [](sc::tcp::connection &c, const std::string_view input) -> std::size_t {
                 if (input.starts_with("boom")) throw std::runtime_error("bad frame");
                 return framed(c, input);
             },
-            .disconnected = [&](sc::tcp_connection &, const sc::tcp_close_reason reason) {
-                if (reason == sc::tcp_close_reason::error) ++errors;
+            .disconnected = [&](sc::tcp::connection &, const sc::tcp::close_reason reason) {
+                if (reason == sc::tcp::close_reason::error) ++errors;
             },
         }};
-        sc::tcp_server::log_level(sc::log_level::error); // the expected warning, not shown
+        sc::tcp::server::log_level(sc::log_level::error); // the expected warning, not shown
         running r{server};
         client bad{r.port()}, good{r.port()};
         bad.write("boom");
@@ -257,20 +257,20 @@ int main() {
         good.write("2:hi");
         CHECK_EQ(good.read(6), string{"ok:hi\n"});
         CHECK(eventually([&] { return errors.load() == 1; }));
-        sc::tcp_server::log_level(sc::log_level::warning);
+        sc::tcp::server::log_level(sc::log_level::warning);
     }
 
     SECTION("Input past max_input, output past max_output: closed");
     {
         std::atomic<int> in{0}, out{0};
-        sc::tcp_server server{any_port, {
-            .received = [](sc::tcp_connection &c, const std::string_view input) -> std::size_t {
+        sc::tcp::server server{any_port, {
+            .received = [](sc::tcp::connection &c, const std::string_view input) -> std::size_t {
                 if (input.starts_with("flood")) c.send(string(1 << 20, 'x')); // the client won't read
                 return 0;                                                     // never consumes
             },
-            .disconnected = [&](sc::tcp_connection &, const sc::tcp_close_reason reason) {
-                if (reason == sc::tcp_close_reason::input_overflow) ++in;
-                if (reason == sc::tcp_close_reason::output_overflow) ++out;
+            .disconnected = [&](sc::tcp::connection &, const sc::tcp::close_reason reason) {
+                if (reason == sc::tcp::close_reason::input_overflow) ++in;
+                if (reason == sc::tcp::close_reason::output_overflow) ++out;
             },
         }, {.max_input = 64 * 1024, .max_output = 256 * 1024}};
         running r{server};
@@ -292,22 +292,22 @@ int main() {
 
     SECTION("Past max_connections: refused");
     {
-        sc::tcp_server server{any_port, {}, {.max_connections = 2}};
-        sc::tcp_server::log_level(sc::log_level::error);
+        sc::tcp::server server{any_port, {}, {.max_connections = 2}};
+        sc::tcp::server::log_level(sc::log_level::error);
         running r{server};
         client a{r.port()}, b{r.port()};
         CHECK(eventually([&] { return server.stats().connections == 2; }));
         client c{r.port()};
         CHECK(c.closed_by_server());
         CHECK_EQ(server.stats().refused, std::uint64_t{1});
-        sc::tcp_server::log_level(sc::log_level::warning);
+        sc::tcp::server::log_level(sc::log_level::warning);
     }
 
     SECTION("stop() with connections open: each disconnected, run() returns");
     {
         std::atomic<int> stopped{0};
-        sc::tcp_server server{any_port, {.disconnected = [&](sc::tcp_connection &, const sc::tcp_close_reason reason) {
-            if (reason == sc::tcp_close_reason::stopped) ++stopped;
+        sc::tcp::server server{any_port, {.disconnected = [&](sc::tcp::connection &, const sc::tcp::close_reason reason) {
+            if (reason == sc::tcp::close_reason::stopped) ++stopped;
         }}};
         std::thread serving{[&] { server.run(); }};
         CHECK(server.wait_until_running());
@@ -322,9 +322,9 @@ int main() {
 
     SECTION("A port already taken: run() throws, wait_until_running() says so");
     {
-        sc::tcp_server first{any_port, {}};
+        sc::tcp::server first{any_port, {}};
         running r{first};
-        sc::tcp_server second{"127.0.0.1:" + std::to_string(r.port()), {}};
+        sc::tcp::server second{"127.0.0.1:" + std::to_string(r.port()), {}};
         std::atomic<bool> threw{false};
         std::thread t{[&] {
             try {
@@ -336,8 +336,8 @@ int main() {
         CHECK(!second.wait_until_running(2s));
         t.join();
         CHECK(threw.load());
-        CHECK_THROWS_AS(sc::tcp_server(sc::ip_endpoints{}, {}), std::invalid_argument);
-        CHECK_EQ(string{sc::tcp_close_reason_name(sc::tcp_close_reason::output_overflow)}, string{"output_overflow"});
+        CHECK_THROWS_AS(sc::tcp::server(sc::ip_endpoints{}, {}), std::invalid_argument);
+        CHECK_EQ(string{sc::tcp::close_reason_name(sc::tcp::close_reason::output_overflow)}, string{"output_overflow"});
     }
 
     TEST_SUMMARY();

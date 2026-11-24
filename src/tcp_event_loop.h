@@ -5,8 +5,8 @@
 #include "tcp_socket.h"
 #include "tcp_worker_pool.h"
 
-#include <sc/tcp/tcp_connection.h>
-#include <sc/tcp/tcp_handlers.h>
+#include <sc/tcp/connection.h>
+#include <sc/tcp/handlers.h>
 
 #include <atomic>
 #include <chrono>
@@ -21,8 +21,8 @@
 #include <unordered_map>
 #include <vector>
 
-// The I/O thread: one loop waiting on every socket, which tcp_server (listeners and the
-// connections they accept) and tcp_client (connections it makes) are built on. Handlers run on the
+// The I/O thread: one loop waiting on every socket, which tcp::server (listeners and the
+// connections they accept) and tcp::client (connections it makes) are built on. Handlers run on the
 // worker pool, on each connection's strand. For a program that wants both, or its own front end.
 namespace sc::tcp {
     struct loop_options {
@@ -34,11 +34,11 @@ namespace sc::tcp {
 
     class event_loop {
     public:
-        using connected_callback = std::function<void(const std::shared_ptr<tcp_connection> &)>;
+        using connected_callback = std::function<void(const std::shared_ptr<tcp::connection> &)>;
         using failed_callback = std::function<void(const std::string &why)>;
-        using closed_callback = std::function<void(const std::shared_ptr<tcp_connection> &, tcp_close_reason)>;
+        using closed_callback = std::function<void(const std::shared_ptr<tcp::connection> &, tcp::close_reason)>;
 
-        event_loop(tcp_handlers handlers, loop_options options);
+        event_loop(tcp::handlers handlers, loop_options options);
         ~event_loop();
         event_loop(const event_loop &) = delete;
         event_loop &operator=(const event_loop &) = delete;
@@ -61,8 +61,8 @@ namespace sc::tcp {
         [[nodiscard]] bool stopping() const { return stop_requested_.load(); }
 
         [[nodiscard]] std::vector<ip_endpoint> listening() const;
-        [[nodiscard]] tcp_stats stats() const;
-        [[nodiscard]] std::vector<std::shared_ptr<tcp_connection>> connections() const;
+        [[nodiscard]] tcp::stats stats() const;
+        [[nodiscard]] std::vector<std::shared_ptr<tcp::connection>> connections() const;
         void count_refused();
 
     private:
@@ -70,19 +70,19 @@ namespace sc::tcp {
 
         void wake();
         void accept_all(const socket &listener);
-        std::shared_ptr<tcp_connection> add_connection(socket s, ip_endpoint remote);
-        void finish(const std::shared_ptr<tcp_connection> &c);
+        std::shared_ptr<tcp::connection> add_connection(socket s, ip_endpoint remote);
+        void finish(const std::shared_ptr<tcp::connection> &c);
         void process_closes(steady::time_point now);
         void process_ticks(steady::time_point now);
         void process_connects(steady::time_point now);
         void process_timers(steady::time_point now);
         void try_next_address(const std::shared_ptr<pending_connect> &p);
         template<typename Work>
-        void call(Work work, const std::shared_ptr<tcp_connection> &c, bool only_while_open);
+        void call(Work work, const std::shared_ptr<tcp::connection> &c, bool only_while_open);
 
-        static connection_state &state_of(const tcp_connection &c);
+        static connection_state &state_of(const tcp::connection &c);
 
-        tcp_handlers handlers_;
+        tcp::handlers handlers_;
         loop_options options_;
         poller events_;
         std::unique_ptr<worker_pool> workers_;
@@ -91,12 +91,12 @@ namespace sc::tcp {
 
         std::vector<socket> listeners_;
         std::vector<ip_endpoint> listening_;
-        std::unordered_map<int, std::shared_ptr<tcp_connection>> by_fd_; // the I/O thread's
-        std::vector<std::pair<std::shared_ptr<tcp_connection>, steady::time_point>> lingering_;
+        std::unordered_map<int, std::shared_ptr<tcp::connection>> by_fd_; // the I/O thread's
+        std::vector<std::pair<std::shared_ptr<tcp::connection>, steady::time_point>> lingering_;
 
         mutable std::mutex connections_mutex_;
-        std::map<std::uint64_t, std::shared_ptr<tcp_connection>> connections_;
-        tcp_stats stats_;
+        std::map<std::uint64_t, std::shared_ptr<tcp::connection>> connections_;
+        tcp::stats stats_;
         std::atomic<std::uint64_t> next_id_{0};
 
         std::mutex close_mutex_;

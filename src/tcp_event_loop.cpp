@@ -29,7 +29,7 @@ namespace sc::tcp {
         std::string last_error = "no address";
     };
 
-    event_loop::event_loop(tcp_handlers handlers, loop_options options)
+    event_loop::event_loop(tcp::handlers handlers, loop_options options)
         : handlers_(std::move(handlers)), options_(options) {
         if (pipe(wake_) != 0) throw std::runtime_error(std::string{"sc-tcp: no pipe: "} + std::strerror(errno));
         nonblocking(wake_[0]);
@@ -41,7 +41,7 @@ namespace sc::tcp {
         ::close(wake_[1]);
     }
 
-    connection_state &event_loop::state_of(const tcp_connection &c) {
+    connection_state &event_loop::state_of(const tcp::connection &c) {
         return *c.state_;
     }
 
@@ -90,21 +90,21 @@ namespace sc::tcp {
     // A handler, with what it throws closing the connection; received and tick aren't called once
     // the connection is closing.
     template<typename Work>
-    void event_loop::call(Work work, const std::shared_ptr<tcp_connection> &c, const bool only_while_open) {
+    void event_loop::call(Work work, const std::shared_ptr<tcp::connection> &c, const bool only_while_open) {
         auto &state = state_of(*c);
         if (only_while_open && state.closing()) return;
         try {
             work();
         } catch (const std::exception &error) {
             warn("connection " + c->remote().to_string() + ": a handler threw: " + error.what());
-            state.request_close(tcp_close_reason::error);
+            state.request_close(tcp::close_reason::error);
         } catch (...) {
             warn("connection " + c->remote().to_string() + ": a handler threw");
-            state.request_close(tcp_close_reason::error);
+            state.request_close(tcp::close_reason::error);
         }
     }
 
-    std::shared_ptr<tcp_connection> event_loop::add_connection(socket s, ip_endpoint remote) {
+    std::shared_ptr<tcp::connection> event_loop::add_connection(socket s, ip_endpoint remote) {
         const int fd = s.fd();
         auto local = ip_endpoint::local_of(fd);
         auto state = std::make_shared<connection_state>(++next_id_, std::move(s), std::move(remote), std::move(local), events_,
@@ -115,7 +115,7 @@ namespace sc::tcp {
                                                             }
                                                             wake();
                                                         });
-        std::shared_ptr<tcp_connection> c{new tcp_connection{state}};
+        std::shared_ptr<tcp::connection> c{new tcp::connection{state}};
         {
             const std::lock_guard lock{connections_mutex_};
             connections_[state->id] = c;
@@ -153,7 +153,7 @@ namespace sc::tcp {
 
     // The disconnected handler, last on the strand; the connection goes once it has run. The
     // caller took it out of by_fd_ first, while its fd was known.
-    void event_loop::finish(const std::shared_ptr<tcp_connection> &c) {
+    void event_loop::finish(const std::shared_ptr<tcp::connection> &c) {
         auto &state = state_of(*c);
         state.shut();
         {
@@ -177,14 +177,14 @@ namespace sc::tcp {
             to_close.swap(close_queue_);
         }
         for (const auto id: to_close) {
-            std::shared_ptr<tcp_connection> c;
+            std::shared_ptr<tcp::connection> c;
             {
                 const std::lock_guard lock{connections_mutex_};
                 if (const auto found = connections_.find(id); found != connections_.end()) c = found->second;
             }
             if (!c) continue;
             auto &state = state_of(*c);
-            if (state.close_reason() == tcp_close_reason::closed && !state.output_empty()) {
+            if (state.close_reason() == tcp::close_reason::closed && !state.output_empty()) {
                 lingering_.emplace_back(c, now + std::chrono::seconds{5});
                 continue;
             }
@@ -207,7 +207,7 @@ namespace sc::tcp {
     void event_loop::process_ticks(const steady::time_point now) {
         const auto tick = options_.limits.tick;
         if (options_.idle_timeout.count() <= 0 && tick.count() <= 0) return;
-        std::vector<std::shared_ptr<tcp_connection>> idle;
+        std::vector<std::shared_ptr<tcp::connection>> idle;
         for (auto &[fd, c]: by_fd_) {
             auto &state = state_of(*c);
             if (state.closing()) continue;
@@ -224,7 +224,7 @@ namespace sc::tcp {
         }
         for (const auto &c: idle) {
             auto &state = state_of(*c);
-            state.request_close(tcp_close_reason::idle);
+            state.request_close(tcp::close_reason::idle);
             by_fd_.erase(state.fd());
             finish(c);
         }
@@ -344,13 +344,13 @@ namespace sc::tcp {
                 auto &state = state_of(*c);
                 if (event.writable) state.flush();
                 if (event.readable && state.closing()) { // waiting for its output: drop what comes, note the end
-                    tcp_close_reason ignored{};
+                    tcp::close_reason ignored{};
                     std::uint64_t received = 0;
                     if (!state.read_available(ignored, received)) state.peer_gone();
                     continue;
                 }
                 if (event.readable) {
-                    tcp_close_reason reason{};
+                    tcp::close_reason reason{};
                     std::uint64_t received = 0;
                     const bool more = state.read_available(reason, received);
                     {
@@ -389,13 +389,13 @@ namespace sc::tcp {
             p->attempt.close();
         }
         connecting_.clear();
-        std::vector<std::shared_ptr<tcp_connection>> left;
+        std::vector<std::shared_ptr<tcp::connection>> left;
         for (auto &[fd, c]: by_fd_) left.push_back(c);
         for (const auto &[c, deadline]: lingering_) left.push_back(c);
         lingering_.clear();
         for (const auto &c: left) {
             auto &state = state_of(*c);
-            state.request_close(tcp_close_reason::stopped);
+            state.request_close(tcp::close_reason::stopped);
             by_fd_.erase(state.fd());
             finish(c);
         }
@@ -415,7 +415,7 @@ namespace sc::tcp {
         return listening_;
     }
 
-    tcp_stats event_loop::stats() const {
+    tcp::stats event_loop::stats() const {
         const std::lock_guard lock{connections_mutex_};
         auto out = stats_;
         out.connections = connections_.size();
@@ -423,15 +423,15 @@ namespace sc::tcp {
         return out;
     }
 
-    std::vector<std::shared_ptr<tcp_connection>> event_loop::connections() const {
+    std::vector<std::shared_ptr<tcp::connection>> event_loop::connections() const {
         const std::lock_guard lock{connections_mutex_};
-        std::vector<std::shared_ptr<tcp_connection>> out;
+        std::vector<std::shared_ptr<tcp::connection>> out;
         out.reserve(connections_.size());
         for (const auto &[id, c]: connections_) out.push_back(c);
         return out;
     }
 }
 
-void sc::tcp_log_level(const sc::log_level level) {
+void sc::tcp::log_level(const sc::log_level level) {
     tcp::level = level;
 }

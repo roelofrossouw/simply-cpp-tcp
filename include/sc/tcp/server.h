@@ -1,10 +1,10 @@
 #pragma once
 
-#include <sc/tcp/tcp_connection.h>
-#include <sc/tcp/tcp_handlers.h>
+#include <sc/tcp/connection.h>
+#include <sc/tcp/handlers.h>
 
-#include <sc/core/ip_endpoint.h>
-#include <sc/core/ip_endpoints.h>
+#include <sc/net/ip_endpoint.h>
+#include <sc/net/ip_endpoints.h>
 
 #include <chrono>
 #include <cstddef>
@@ -15,33 +15,33 @@
 // GPS trackers. One thread waits on every socket (epoll on Linux, kqueue on macOS); a few worker
 // threads run the handlers.
 //
-//     sc::tcp_server server{"0.0.0.0:5400;0.0.0.0:5500", {
+//     sc::tcp::server server{"0.0.0.0:5400;0.0.0.0:5500", {
 //         .connected = connected,
-//         .received = received,      // std::size_t received(sc::tcp_connection &, std::string_view input)
+//         .received = received,      // std::size_t received(sc::tcp::connection &, std::string_view input)
 //     }};
 //     std::thread serving{[&] { server.run(); }};
-namespace sc {
-    struct tcp_server_options {
+namespace sc::tcp {
+    struct server_options {
         std::size_t threads = 0;                     // workers running handlers; 0: one a CPU, at least 2
         std::chrono::milliseconds idle_timeout{0};   // close a connection silent this long; 0: never
-        std::chrono::milliseconds tick{0};           // tcp_handlers::tick for each connection this often; 0: never
+        std::chrono::milliseconds tick{0};           // tcp::handlers::tick for each connection this often; 0: never
         std::size_t max_connections = 10000;         // more are accepted and closed at once
         std::size_t max_input = 1 << 20;             // unconsumed input a connection may hold
         std::size_t max_output = 4 << 20;            // unsent output a connection may hold
         int backlog = 512;                           // connections waiting to be accepted
     };
 
-    using tcp_server_stats = tcp_stats;
+    using server_stats = tcp::stats;
 
-    class tcp_server {
+    class server {
     public:
         // listen: one or more host:port, ';'-separated ("0.0.0.0:5400;[::]:5400"); an ip_endpoint
         // with port 0 ({"127.0.0.1", 0}) gets a free one (see listening()). Binds when run() starts.
-        tcp_server(ip_endpoints listen, tcp_handlers handlers, tcp_server_options options = {});
-        ~tcp_server();
+        server(ip_endpoints listen, tcp::handlers handlers, tcp::server_options options = {});
+        ~server();
 
-        tcp_server(const tcp_server &) = delete;
-        tcp_server &operator=(const tcp_server &) = delete;
+        server(const tcp::server &) = delete;
+        tcp::server &operator=(const tcp::server &) = delete;
 
         // Serves until stop(): usually on a thread of its own. Throws std::runtime_error when an
         // endpoint can't be bound, or when it is already running.
@@ -54,11 +54,11 @@ namespace sc {
 
         // Where it listens, with the ports bound (after wait_until_running()).
         [[nodiscard]] std::vector<ip_endpoint> listening() const;
-        [[nodiscard]] tcp_stats stats() const;
+        [[nodiscard]] tcp::stats stats() const;
         // The open connections, say to send to one by an ID the handlers keep in its context().
-        [[nodiscard]] std::vector<std::shared_ptr<tcp_connection>> connections() const;
+        [[nodiscard]] std::vector<std::shared_ptr<tcp::connection>> connections() const;
 
-        // The same as sc::tcp_log_level().
+        // The same as sc::tcp::log_level().
         static void log_level(sc::log_level level);
 
     private:

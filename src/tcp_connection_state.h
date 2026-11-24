@@ -4,7 +4,7 @@
 #include "tcp_socket.h"
 #include "tcp_worker_pool.h"
 
-#include <sc/tcp/tcp_connection.h>
+#include <sc/tcp/connection.h>
 
 #include <any>
 #include <atomic>
@@ -15,9 +15,9 @@
 #include <mutex>
 #include <string>
 
-// What a tcp_connection is underneath: its socket, the input the I/O thread reads and the strand's
+// What a tcp::connection is underneath: its socket, the input the I/O thread reads and the strand's
 // handlers consume, the output waiting for the socket, and its handlers' strand. The event loop's;
-// programs use tcp_connection.
+// programs use tcp::connection.
 namespace sc::tcp {
     using steady = std::chrono::steady_clock;
 
@@ -31,18 +31,18 @@ namespace sc::tcp {
         connection_state(std::uint64_t id, socket s, ip_endpoint remote, ip_endpoint local, poller &events,
                          const connection_limits &limits, std::function<void(std::uint64_t)> wake_to_close);
 
-        // --- tcp_connection's, from any thread ---
+        // --- tcp::connection's, from any thread ---
         bool send(std::string_view bytes);
         void close();
 
         // --- the I/O thread's ---
         // Reads what the socket has; false at its end (or an error), with the reason.
-        bool read_available(tcp_close_reason &reason, std::uint64_t &received);
+        bool read_available(tcp::close_reason &reason, std::uint64_t &received);
         // Writes what's waiting; true when it's all out.
         bool flush();
         [[nodiscard]] bool output_empty();
         // Marks it closing (the first reason counts) and has the I/O thread close it.
-        void request_close(tcp_close_reason reason);
+        void request_close(tcp::close_reason reason);
         // Shuts the socket; the state stays until the connection goes, so a late send() fails cleanly.
         void shut();
 
@@ -60,7 +60,7 @@ namespace sc::tcp {
 
         [[nodiscard]] int fd() const { return fd_; }
         [[nodiscard]] bool closing() const { return closing_.load(); }
-        [[nodiscard]] tcp_close_reason close_reason() const { return close_reason_; }
+        [[nodiscard]] tcp::close_reason close_reason() const { return close_reason_; }
         void peer_gone() { gone_ = true; } // the other end closed while output waited
         [[nodiscard]] bool gone() const { return gone_.load(); }
         [[nodiscard]] std::uint64_t sent() const { return sent_.load(); }
@@ -79,7 +79,7 @@ namespace sc::tcp {
         std::atomic<std::uint64_t> sent_{0};
         std::atomic<bool> closing_{false};
         std::atomic<bool> gone_{false};
-        tcp_close_reason close_reason_ = tcp_close_reason::closed;
+        tcp::close_reason close_reason_ = tcp::close_reason::closed;
 
         std::mutex input_mutex_;
         std::string arrived_;

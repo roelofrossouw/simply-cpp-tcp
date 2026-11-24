@@ -10,7 +10,7 @@
 #include <vector>
 
 // Worker threads, and strands: a strand's tasks run one at a time and in order, on whichever
-// worker is free; different strands' run side by side. Each tcp_connection is a strand.
+// worker is free; different strands' run side by side. Each tcp::connection is a strand.
 namespace sc::tcp {
     class strand {
     public:
