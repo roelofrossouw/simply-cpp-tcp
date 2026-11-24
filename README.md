@@ -8,7 +8,7 @@ Linux, kqueue on macOS) and a few worker threads run the handlers, so thousands 
 a few threads and little memory, not a thread each.
 
 It was `sc-tcp-server` up to 1.0.2: the packages `simply-cpp-tcp(-dev)` replace
-`simply-cpp-tcp-server(-dev)`. `tcp::server` and its handlers kept their names.
+`simply-cpp-tcp-server(-dev)`. Since 5.0.0 everything is in namespace `sc::tcp` without the `tcp_` prefixes: `sc::tcp::server`, `client`, `connection`, `handlers`, `stats`, `close_reason` (were `tcp_server`, `tcp_client`, ...), with headers `<sc/tcp/server.h>`, `client.h`, `connection.h` and `handlers.h`.
 
 **Documentation:** the [simply-cpp wiki](https://github.com/roelofrossouw/simply-cpp/wiki) has a [TCP guide](https://github.com/roelofrossouw/simply-cpp/wiki/TCP) and the [sc-tcp reference](https://github.com/roelofrossouw/simply-cpp/wiki/Reference-sc-tcp), plus [getting started](https://github.com/roelofrossouw/simply-cpp/wiki/Getting-Started) for the whole suite.
 
@@ -52,7 +52,7 @@ socket takes it; false once closed, or past `max_output`, which closes it) and `
 was sent is out, within 5 s). `server.connections()` lists a server's open ones; a client has
 `connection()`.
 
-## Servers (`tcp::server.h`)
+## Servers (`server.h`)
 
 | Option | Default | |
 |---|---|---|
@@ -88,7 +88,7 @@ Since 4.0.0 they're private (in `src/`, not installed); the front ends above are
 
 | Header | Class | |
 |---|---|---|
-| `tcp_socket.h` | `sc::tcp::socket` | a socket file descriptor, owned: listening, accepting, a non-blocking connect, reads and writes. Addresses come from `sc::ip_endpoint` (sc-core) |
+| `tcp_socket.h` | `sc::tcp::socket` | a socket file descriptor, owned: listening, accepting, a non-blocking connect, reads and writes. Addresses come from `sc::ip_endpoint` (sc-net) |
 | `tcp_poller.h` | `sc::tcp::poller` | waiting on many sockets: epoll or kqueue behind one interface |
 | `tcp_worker_pool.h` | `sc::tcp::worker_pool`, `sc::tcp::strand` | worker threads; a strand's tasks run one at a time, in order |
 | `tcp_event_loop.h` | `sc::tcp::event_loop` | the I/O loop both front ends are built on: listeners, outgoing connects, timers, ticks, idle timeouts, closing |
