@@ -358,8 +358,11 @@ namespace sc::tcp {
                         stats_.bytes_received += received;
                     }
                     if (received > 0 && state.claim_data_task()) {
+                        // Not call()'s while-open check: what arrived before the peer closed (often
+                        // in the same read as its FIN) is still handled, before disconnected.
                         workers_->post(c->state_, [this, c] { call([&] {
                             auto &s = state_of(*c);
+                            if (!s.reading()) return;
                             auto &input = s.take_arrived();
                             if (!handlers_.received) return s.consumed(input.size());
                             while (!input.empty()) {
@@ -367,7 +370,7 @@ namespace sc::tcp {
                                 if (used == 0) break;
                                 s.consumed(used);
                             }
-                        }, c, true); });
+                        }, c, false); });
                     }
                     if (!more) state.request_close(reason);
                 }

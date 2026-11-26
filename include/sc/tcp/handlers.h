@@ -18,7 +18,9 @@ namespace sc::tcp {
         std::function<void(tcp::connection &)> connected;
         // When bytes arrive: input is everything received and not yet consumed. Returns how many
         // bytes from the start it consumed; the rest stays, and more is added to it. Returning 0
-        // waits for more. Called again while it consumes and input is left.
+        // waits for more. Called again while it consumes and input is left. What arrived before
+        // the other side closed is still handed over (then disconnected runs, with peer); after
+        // close() or any other reason, it isn't.
         std::function<std::size_t(tcp::connection &, std::string_view input)> received;
         // Every tick (the options'), between the others.
         std::function<void(tcp::connection &)> tick;

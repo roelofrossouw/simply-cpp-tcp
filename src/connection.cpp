@@ -43,7 +43,7 @@ namespace sc::tcp {
 
     bool connection_state::send(const std::string_view bytes) {
         const std::lock_guard lock{output_mutex_};
-        if (closing_ || !socket_.valid()) return false;
+        if (closing() || !socket_.valid()) return false;
         std::size_t offset = 0;
         if (output_.empty()) { // straight out, as far as the socket takes it
             while (offset < bytes.size()) {
@@ -136,9 +136,8 @@ namespace sc::tcp {
     }
 
     void connection_state::request_close(const tcp::close_reason reason) {
-        bool expected = false;
-        if (closing_.compare_exchange_strong(expected, true)) {
-            close_reason_ = reason;
+        int expected = -1;
+        if (close_reason_.compare_exchange_strong(expected, static_cast<int>(reason))) {
             wake_to_close_(id);
         }
     }

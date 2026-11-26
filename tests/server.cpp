@@ -1,6 +1,6 @@
 // The server on loopback with real sockets: framing over partial and joined reads, order and
 // counts with many clients at once, several ports, idle timeouts and ticks, sending from other
-// threads, close() after output, handlers that throw, input and output limits, the connection
+// threads, close() after output, data just before the other side closes, handlers that throw, input and output limits, the connection
 // limit, stopping with connections open, and binding errors.
 
 #include <sc/tcp/tcp.h>
@@ -79,6 +79,8 @@ namespace {
             ::close(fd_);
             fd_ = -1;
         }
+        // No more from this side (FIN); what was written still goes.
+        void end_writing() const { ::shutdown(fd_, SHUT_WR); }
 
     private:
         int fd_ = -1;
@@ -155,6 +157,45 @@ int main() {
         CHECK_EQ(seen.front(), string{"connected 127.0.0.1"});
         CHECK_EQ(seen.back(), string{"disconnected peer"});
         CHECK_EQ(server.stats().accepted, std::uint64_t{1});
+    }
+
+    SECTION("Data sent just before the other side closes: still received, then disconnected (peer)");
+    {
+        // The FIN usually comes in the same read as the data; before 5.0.1 that data was dropped.
+        std::mutex m;
+        std::map<int, std::vector<string>> seen; // by the client's port
+        sc::tcp::server server{any_port, {
+            .received = [&](sc::tcp::connection &c, const std::string_view input) {
+                const auto end = input.find('$');
+                if (end == std::string_view::npos) return std::size_t{0};
+                const std::lock_guard l{m};
+                seen[c.remote().port].emplace_back(input.substr(0, end));
+                return end + 1;
+            },
+            .disconnected = [&](sc::tcp::connection &c, const sc::tcp::close_reason reason) {
+                const std::lock_guard l{m};
+                seen[c.remote().port].push_back("disconnected " + string{sc::tcp::close_reason_name(reason)});
+            },
+        }};
+        running r{server};
+        for (int round = 0; round < 20; ++round) { // closes at once, the last one after a pause
+            client c{r.port()};
+            c.write("first$second$");
+            if (round == 19) std::this_thread::sleep_for(50ms);
+            c.end_writing();
+            CHECK(c.closed_by_server());
+        }
+        const std::vector<string> expected{"first", "second", "disconnected peer"};
+        CHECK(eventually([&] {
+            const std::lock_guard l{m};
+            std::size_t done = 0;
+            for (const auto &[port, events]: seen) done += events.size() == 3 && events.back().starts_with("disconnected");
+            return done == 20;
+        }));
+        const std::lock_guard l{m};
+        std::size_t in_order = 0;
+        for (const auto &[port, events]: seen) in_order += events == expected;
+        CHECK_EQ(in_order, std::size_t{20});
     }
 
     SECTION("Many clients at once: each one's frames answered, in order");

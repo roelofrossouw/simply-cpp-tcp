@@ -59,8 +59,17 @@ namespace sc::tcp {
         std::any context;
 
         [[nodiscard]] int fd() const { return fd_; }
-        [[nodiscard]] bool closing() const { return closing_.load(); }
-        [[nodiscard]] tcp::close_reason close_reason() const { return close_reason_; }
+        [[nodiscard]] bool closing() const { return close_reason_.load() >= 0; }
+        [[nodiscard]] tcp::close_reason close_reason() const {
+            const auto reason = close_reason_.load();
+            return reason < 0 ? tcp::close_reason::closed : static_cast<tcp::close_reason>(reason);
+        }
+        // Whether input still goes to the received handler: open, or closed by the peer (what it
+        // sent before it closed is still read).
+        [[nodiscard]] bool reading() const {
+            const auto reason = close_reason_.load();
+            return reason < 0 || reason == static_cast<int>(tcp::close_reason::peer);
+        }
         void peer_gone() { gone_ = true; } // the other end closed while output waited
         [[nodiscard]] bool gone() const { return gone_.load(); }
         [[nodiscard]] std::uint64_t sent() const { return sent_.load(); }
@@ -77,9 +86,8 @@ namespace sc::tcp {
         std::mutex output_mutex_;
         std::string output_;
         std::atomic<std::uint64_t> sent_{0};
-        std::atomic<bool> closing_{false};
         std::atomic<bool> gone_{false};
-        tcp::close_reason close_reason_ = tcp::close_reason::closed;
+        std::atomic<int> close_reason_{-1}; // a tcp::close_reason once closing (the first one counts); -1 while open
 
         std::mutex input_mutex_;
         std::string arrived_;
